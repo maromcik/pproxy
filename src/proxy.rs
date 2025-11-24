@@ -84,27 +84,22 @@ impl Service for MonitorService {
         _listeners_per_fd: usize,
     ) {
         info!("Background Monitor Service Started");
+
         let mut interval = tokio::time::interval(Duration::from_secs(1));
+
         loop {
             tokio::select! {
-                // --- Graceful shutdown signal ---
                 _ = shutdown.changed() => {
                     info!("Shutdown signal received. Stopping ActivityMonitor...");
-                    break; // exit loop, service ends cleanly
+                    break;
                 }
 
-                // --- Main timer tick ---
                 _ = interval.tick() => {
                     if !self.state.suspended.load(Ordering::Relaxed) {
                         let last_activity = self.state.timer.read().await;
                         if last_activity.elapsed() > self.state.limit {
                             drop(last_activity);
-
-                            info!(
-                                "Timeout reached ({:?}). Suspending system...",
-                                self.state.limit
-                            );
-
+                            info!("Timeout reached. Suspending...");
                             call_script(&self.state.suspend_command).await;
                             self.state.suspended.store(true, Ordering::Relaxed);
                         }
@@ -113,8 +108,9 @@ impl Service for MonitorService {
             }
         }
 
-        info!("ActivityMonitor service exited gracefully.");
+        info!("ActivityMonitor exited cleanly");
     }
+
 
     fn name(&self) -> &str {
         "ActivityMonitor"
