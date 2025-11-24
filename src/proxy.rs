@@ -7,7 +7,6 @@ use pingora::lb::LoadBalancer;
 use pingora::prelude::{HttpPeer, ProxyHttp, RoundRobin, Session};
 use pingora::server::{ListenFds, ShutdownWatch};
 use pingora::services::Service;
-use pingora::upstreams::peer::Peer;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 use crate::utils::call_script;
