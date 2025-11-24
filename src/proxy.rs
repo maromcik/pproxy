@@ -87,29 +87,33 @@ impl Service for MonitorService {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
         loop {
             tokio::select! {
-                _ = interval.tick() => {
-                },
+                // --- Graceful shutdown signal ---
                 _ = shutdown.changed() => {
-                    info!("Graceful shutdown signal received. Stopping Monitor Service.");
-                    return;
+                    info!("Shutdown signal received. Stopping ActivityMonitor...");
+                    break; // exit loop, service ends cleanly
                 }
-            }
 
-            if !self.state.suspended.load(Ordering::Relaxed) {
-                let last_activity = self.state.timer.read().await;
-                if last_activity.elapsed() > self.state.limit {
-                    drop(last_activity);
+                // --- Main timer tick ---
+                _ = interval.tick() => {
+                    if !self.state.suspended.load(Ordering::Relaxed) {
+                        let last_activity = self.state.timer.read().await;
+                        if last_activity.elapsed() > self.state.limit {
+                            drop(last_activity);
 
-                    info!(
-                        "Timeout reached ({:?}). Suspending system...",
-                        self.state.limit
-                    );
-                    call_script(&self.state.suspend_command).await;
+                            info!(
+                                "Timeout reached ({:?}). Suspending system...",
+                                self.state.limit
+                            );
 
-                    self.state.suspended.store(true, Ordering::Relaxed);
+                            call_script(&self.state.suspend_command).await;
+                            self.state.suspended.store(true, Ordering::Relaxed);
+                        }
+                    }
                 }
             }
         }
+
+        info!("ActivityMonitor service exited gracefully.");
     }
 
     fn name(&self) -> &str {
