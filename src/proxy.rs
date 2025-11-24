@@ -80,14 +80,17 @@ impl Service for MonitorService {
     async fn start_service(
         &mut self,
         _fds: Option<ListenFds>,
-        _shutdown: ShutdownWatch,
+        mut shutdown: ShutdownWatch,
         _listeners_per_fd: usize,
     ) {
         info!("Background Monitor Service Started");
         let mut interval = tokio::time::interval(Duration::from_secs(1));
-
+        if *shutdown.borrow_and_update() {
+            return;
+        }
         loop {
             interval.tick().await;
+
             if !self.state.suspended.load(Ordering::Relaxed) {
                 let last_activity = self.state.timer.read().await;
                 if last_activity.elapsed() > self.state.limit {
