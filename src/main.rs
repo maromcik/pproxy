@@ -71,10 +71,9 @@ struct Cli {
 
     /// Optional log level.
     #[clap(
-        short = 'l',
         long,
         value_name = "LOG_LEVEL",
-        env = "EDUMDNS_PROBE_LOG_LEVEL",
+        env = "LOG_LEVEL",
         default_value = "info"
     )]
     log_level: String,
@@ -107,6 +106,7 @@ fn main() {
         limit: Duration::from_secs(cli.suspend_timeout),
         suspend_command: cli.suspend_command,
         wake_command: cli.wake_command,
+        waking: AtomicBool::new(false)
     });
 
 

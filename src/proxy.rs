@@ -19,6 +19,7 @@ pub struct ServerState {
     pub limit: Duration,
     pub suspend_command: String,
     pub wake_command: String,
+    pub waking: AtomicBool
 }
 
 
@@ -48,23 +49,27 @@ impl ProxyHttp for ImmichProxy {
         Ok(peer)
     }
 
-    // 3. The Logic Hook: request_filter
-    // This runs after headers are received but before sending to upstream.
+
     async fn request_filter(&self, _session: &mut Session, _ctx: &mut Self::CTX) -> pingora::Result<bool> {
         let suspended = self.state.suspended.load(Ordering::Relaxed);
-
         if suspended {
-            info!("Waking up");
-            call_script(&self.state.wake_command).await;
-
+            if !self.state.waking.swap(true, Ordering::SeqCst) {
+                info!("Traffic detected! Waking system up (First Responder)...");
+                call_script(&self.state.wake_command).await;
+                self.state.suspended.store(false, Ordering::SeqCst);
+                self.state.waking.store(false, Ordering::SeqCst); 
+                let mut timer = self.state.timer.write().await;
+                *timer = Instant::now();
+            } else {
+                while self.state.suspended.load(Ordering::Relaxed) {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            }
         }
-        if suspended || self.state.timer.read().await.elapsed() < self.state.limit {
-            info!("Resetting timer");
-            self.state.suspended.store(false, Ordering::Relaxed);
+        else {
             let mut timer = self.state.timer.write().await;
             *timer = Instant::now();
         }
-
 
         Ok(false)
     }
