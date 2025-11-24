@@ -1,17 +1,14 @@
+use crate::utils::call_script;
+use async_trait::async_trait;
+use log::info;
+use pingora::prelude::{HttpPeer, ProxyHttp, Session};
+use pingora::server::{ListenFds, ShutdownWatch};
+use pingora::services::Service;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use async_trait::async_trait;
-use log::info;
-use pingora::lb::LoadBalancer;
-use pingora::prelude::{HttpPeer, ProxyHttp, RoundRobin, Session};
-use pingora::server::{ListenFds, ShutdownWatch};
-use pingora::services::Service;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
-use crate::utils::call_script;
-
-pub struct LB(Arc<LoadBalancer<RoundRobin>>);
 
 pub struct ServerState {
     pub timer: RwLock<Instant>,
@@ -19,9 +16,8 @@ pub struct ServerState {
     pub limit: Duration,
     pub suspend_command: String,
     pub wake_command: String,
-    pub waking: AtomicBool
+    pub waking: AtomicBool,
 }
-
 
 pub struct ImmichProxy {
     pub upstream_addr: String,
@@ -41,18 +37,17 @@ impl ProxyHttp for ImmichProxy {
         _session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<Box<HttpPeer>> {
-        let mut peer = Box::new(HttpPeer::new(
-            &self.upstream_addr,
-            false,
-            "".to_string(),
-        ));
+        let mut peer = Box::new(HttpPeer::new(&self.upstream_addr, false, "".to_string()));
         peer.options.connection_timeout = Some(Duration::from_secs(20));
         peer.options.read_timeout = Some(Duration::from_secs(20));
         Ok(peer)
     }
 
-
-    async fn request_filter(&self, _session: &mut Session, _ctx: &mut Self::CTX) -> pingora::Result<bool> {
+    async fn request_filter(
+        &self,
+        _session: &mut Session,
+        _ctx: &mut Self::CTX,
+    ) -> pingora::Result<bool> {
         let suspended = self.state.suspended.load(Ordering::Relaxed);
         if suspended {
             if !self.state.waking.swap(true, Ordering::SeqCst) {
@@ -67,8 +62,7 @@ impl ProxyHttp for ImmichProxy {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 }
             }
-        }
-        else {
+        } else {
             let mut timer = self.state.timer.write().await;
             *timer = Instant::now();
         }
@@ -83,7 +77,12 @@ pub struct MonitorService {
 
 #[async_trait]
 impl Service for MonitorService {
-    async fn start_service(&mut self, fds: Option<ListenFds>, shutdown: ShutdownWatch, listeners_per_fd: usize) {
+    async fn start_service(
+        &mut self,
+        _fds: Option<ListenFds>,
+        _shutdown: ShutdownWatch,
+        _listeners_per_fd: usize,
+    ) {
         info!("Background Monitor Service Started");
         let mut interval = tokio::time::interval(Duration::from_secs(1));
 
@@ -94,7 +93,10 @@ impl Service for MonitorService {
                 if last_activity.elapsed() > self.state.limit {
                     drop(last_activity);
 
-                    info!("Timeout reached ({:?}). Suspending system...", self.state.limit);
+                    info!(
+                        "Timeout reached ({:?}). Suspending system...",
+                        self.state.limit
+                    );
                     call_script(&self.state.suspend_command).await;
 
                     self.state.suspended.store(true, Ordering::Relaxed);
@@ -102,7 +104,6 @@ impl Service for MonitorService {
             }
         }
     }
-
 
     fn name(&self) -> &str {
         "ActivityMonitor"

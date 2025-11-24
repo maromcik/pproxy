@@ -1,11 +1,11 @@
-mod utils;
 mod proxy;
+mod utils;
 
 use crate::proxy::{ImmichProxy, MonitorService, ServerState};
 use clap::Parser;
 use pingora::prelude::*;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use tokio::time::Instant;
 use tracing_subscriber::EnvFilter;
@@ -17,7 +17,6 @@ struct PreCli {
     env_file: Option<String>,
 }
 
-
 #[derive(Debug, Parser)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
@@ -25,22 +24,11 @@ struct Cli {
     #[clap(short, long, value_name = "ENV_FILE")]
     env_file: Option<String>,
 
-
     /// Server host to proxy to, e.g. example.com or 192.168.0.10.
-    #[clap(
-        short = 's',
-        long,
-        value_name = "SERVER_HOST",
-        env = "SERVER_HOST"
-    )]
+    #[clap(short = 's', long, value_name = "SERVER_HOST", env = "SERVER_HOST")]
     server_host: String,
 
-    #[clap(
-        short = 'l',
-        long,
-        value_name = "LISTEN_HOST",
-        env = "LISTEN_HOST"
-    )]
+    #[clap(short = 'l', long, value_name = "LISTEN_HOST", env = "LISTEN_HOST")]
     listen_host: String,
 
     #[clap(
@@ -51,12 +39,7 @@ struct Cli {
     )]
     suspend_command: String,
 
-    #[clap(
-        short = 'w',
-        long,
-        value_name = "WAKE_COMMAND",
-        env = "WAKE_COMMAND"
-    )]
+    #[clap(short = 'w', long, value_name = "WAKE_COMMAND", env = "WAKE_COMMAND")]
     wake_command: String,
 
     #[clap(
@@ -68,7 +51,6 @@ struct Cli {
     )]
     suspend_timeout: u64,
 
-
     /// Optional log level.
     #[clap(
         long,
@@ -78,7 +60,6 @@ struct Cli {
     )]
     log_level: String,
 }
-
 
 fn main() {
     let pre = PreCli::try_parse().unwrap_or_default();
@@ -106,9 +87,8 @@ fn main() {
         limit: Duration::from_secs(cli.suspend_timeout),
         suspend_command: cli.suspend_command,
         wake_command: cli.wake_command,
-        waking: AtomicBool::new(false)
+        waking: AtomicBool::new(false),
     });
-
 
     let monitor_service = MonitorService {
         state: state.clone(),
@@ -119,7 +99,7 @@ fn main() {
         &server.configuration,
         ImmichProxy {
             upstream_addr: cli.server_host,
-            state
+            state,
         },
     );
 
@@ -128,6 +108,3 @@ fn main() {
     server.add_service(proxy_service);
     server.run_forever();
 }
-
-
-
