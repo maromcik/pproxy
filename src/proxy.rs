@@ -80,16 +80,20 @@ impl Service for MonitorService {
     async fn start_service(
         &mut self,
         _fds: Option<ListenFds>,
-        shutdown: ShutdownWatch,
+        mut shutdown: ShutdownWatch,
         _listeners_per_fd: usize,
     ) {
         info!("Background Monitor Service Started");
         let mut interval = tokio::time::interval(Duration::from_secs(1));
-        if let Ok(_) = shutdown.has_changed() {
-            return;
-        }
         loop {
-            interval.tick().await;
+            tokio::select! {
+                _ = interval.tick() => {
+                },
+                _ = shutdown.changed() => {
+                    info!("Graceful shutdown signal received. Stopping Monitor Service.");
+                    return;
+                }
+            }
 
             if !self.state.suspended.load(Ordering::Relaxed) {
                 let last_activity = self.state.timer.read().await;
