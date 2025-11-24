@@ -7,6 +7,7 @@ use pingora::lb::LoadBalancer;
 use pingora::prelude::{HttpPeer, ProxyHttp, RoundRobin, Session};
 use pingora::server::{ListenFds, ShutdownWatch};
 use pingora::services::Service;
+use pingora::upstreams::peer::Peer;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 use crate::utils::call_script;
@@ -41,11 +42,13 @@ impl ProxyHttp for ImmichProxy {
         _session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<Box<HttpPeer>> {
-        let peer = Box::new(HttpPeer::new(
+        let mut peer = Box::new(HttpPeer::new(
             &self.upstream_addr,
             false,
             "".to_string(),
         ));
+        peer.options.connection_timeout = Some(Duration::from_secs(20));
+        peer.options.read_timeout = Some(Duration::from_secs(20));
         Ok(peer)
     }
 
@@ -57,7 +60,7 @@ impl ProxyHttp for ImmichProxy {
                 info!("Traffic detected! Waking system up (First Responder)...");
                 call_script(&self.state.wake_command).await;
                 self.state.suspended.store(false, Ordering::SeqCst);
-                self.state.waking.store(false, Ordering::SeqCst); 
+                self.state.waking.store(false, Ordering::SeqCst);
                 let mut timer = self.state.timer.write().await;
                 *timer = Instant::now();
             } else {
