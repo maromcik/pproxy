@@ -1,15 +1,17 @@
+mod error;
+mod management;
 mod proxy;
 mod utils;
-mod error;
 
-use crate::proxy::{ImmichProxy, MonitorService, ServerState};
+use crate::management::{ControlService, MonitorService};
+use crate::proxy::{ImmichProxy, ServerState};
 use clap::Parser;
 use pingora::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use tokio::time::Instant;
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser, Default)]
@@ -33,6 +35,9 @@ struct Cli {
     #[clap(short = 'l', long, value_name = "LISTEN_HOST", env = "LISTEN_HOST")]
     listen_host: String,
 
+    #[clap(short = 'i', long, value_name = "LISTEN_CONTROL_HOST", env = "LISTEN_CONTROL_HOST")]
+    listen_control_host: String,
+
     #[clap(
         short = 's',
         long,
@@ -41,12 +46,7 @@ struct Cli {
     )]
     suspend_command: String,
 
-    #[clap(
-        short = 'c',
-        long,
-        value_name = "CHECK_COMMAND",
-        env = "CHECK_COMMAND"
-    )]
+    #[clap(short = 'c', long, value_name = "CHECK_COMMAND", env = "CHECK_COMMAND")]
     check_command: String,
 
     #[clap(short = 'w', long, value_name = "WAKE_COMMAND", env = "WAKE_COMMAND")]
@@ -90,7 +90,8 @@ fn main() {
 
     let cli = Cli::parse();
 
-    let env = EnvFilter::new(format!("pproxy={},{}", cli.app_log_level, cli.all_log_level).as_str());
+    let env =
+        EnvFilter::new(format!("pproxy={},{}", cli.app_log_level, cli.all_log_level).as_str());
     let timer = tracing_subscriber::fmt::time::LocalTime::rfc_3339();
     tracing_subscriber::fmt()
         .with_timer(timer)
@@ -98,8 +99,15 @@ fn main() {
         .with_env_filter(env)
         .init();
 
-    let mut server = Server::new(Some(Opt::default())).unwrap();
+    let mut server = match Server::new(Some(Opt::default())) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Failed to create server: {e}");
+            return;
+        }
+    };
     server.bootstrap();
+
     let state = Arc::new(ServerState {
         timer: Instant::now().into(),
         suspended: AtomicBool::new(false),
@@ -108,6 +116,7 @@ fn main() {
         check_command: cli.check_command,
         wake_command: cli.wake_command,
         waking: AtomicBool::new(false),
+        auto_suspend_enabled: AtomicBool::new(false),
     });
 
     info!("Bootstrap done");
@@ -116,6 +125,13 @@ fn main() {
         state: state.clone(),
     };
     server.add_service(monitor_service);
+
+    let mut control_service = http_proxy_service(
+        &server.configuration,
+        ControlService {
+            state: state.clone(),
+        },
+    );
 
     let mut proxy_service = http_proxy_service(
         &server.configuration,
@@ -126,8 +142,11 @@ fn main() {
     );
 
     proxy_service.add_tcp(&cli.listen_host);
+    control_service.add_tcp(&cli.listen_control_host);
+
 
     server.add_service(proxy_service);
+    server.add_service(control_service);
     info!("Server starting");
     server.run_forever();
 }

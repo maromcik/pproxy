@@ -2,8 +2,6 @@ use crate::utils::call_script;
 use async_trait::async_trait;
 use log::info;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
-use pingora::server::{ListenFds, ShutdownWatch};
-use pingora::services::Service;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -19,6 +17,7 @@ pub struct ServerState {
     pub wake_command: String,
     pub check_command: String,
     pub waking: AtomicBool,
+    pub auto_suspend_enabled: AtomicBool
 }
 
 pub struct ImmichProxy {
@@ -49,18 +48,18 @@ impl ProxyHttp for ImmichProxy {
         _session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
-        let suspended = self.state.suspended.load(Ordering::Relaxed);
+        let suspended = self.state.suspended.load(Ordering::Acquire);
         if suspended {
-            if !self.state.waking.swap(true, Ordering::SeqCst) {
+            if !self.state.waking.swap(true, Ordering::AcqRel) {
                 info!("traffic detected: waking up upstream");
                 let _ = call_script(&self.state.wake_command).await;
-                self.state.suspended.store(false, Ordering::SeqCst);
-                self.state.waking.store(false, Ordering::SeqCst);
+                self.state.suspended.store(false, Ordering::Release);
+                self.state.waking.store(false, Ordering::Release);
                 let mut timer = self.state.timer.write().await;
                 *timer = Instant::now();
                 info!("upstream woke up: timer reset");
             } else {
-                while self.state.suspended.load(Ordering::Relaxed) {
+                while self.state.suspended.load(Ordering::Acquire) {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     debug!("waiting for another request to wake up upstream");
                 }
@@ -75,51 +74,3 @@ impl ProxyHttp for ImmichProxy {
     }
 }
 
-pub struct MonitorService {
-    pub state: Arc<ServerState>,
-}
-
-#[async_trait]
-impl Service for MonitorService {
-    async fn start_service(
-        &mut self,
-        _fds: Option<ListenFds>,
-        mut shutdown: ShutdownWatch,
-        _listeners_per_fd: usize,
-    ) {
-        info!("Background Monitor Service Started");
-
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-
-        loop {
-            tokio::select! {
-                _ = shutdown.changed() => {
-                    info!("Shutdown signal received. Stopping ActivityMonitor...");
-                    break;
-                }
-
-                _ = interval.tick() => {
-                    if !self.state.suspended.load(Ordering::Relaxed) {
-                        let last_activity = self.state.timer.read().await;
-                        if last_activity.elapsed() > self.state.limit {
-                            let _ = call_script(&self.state.suspend_command).await;
-                            self.state.suspended.store(true, Ordering::Relaxed);
-                            info!("timeout reached: upstream suspended");
-                        }
-                        if call_script(&self.state.check_command).await.is_err() {
-                            info!("check command failed: setting suspend=true; next request should wake up again");
-                            self.state.suspended.store(true, Ordering::Relaxed);
-                        }
-                    }
-                }
-            }
-        }
-
-        info!("ActivityMonitor exited cleanly");
-    }
-
-
-    fn name(&self) -> &str {
-        "ActivityMonitor"
-    }
-}

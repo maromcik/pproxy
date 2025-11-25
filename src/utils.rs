@@ -1,4 +1,4 @@
-use log::{debug, error, info};
+use log::{debug, error};
 use tokio::process::Command;
 use crate::error::AppError;
 
@@ -8,16 +8,17 @@ pub async fn call_script(script: &str) -> Result<String, AppError> {
     match output {
         Ok(o) => {
             if !o.status.success() {
-                info!("Script {} exited with non-zero status: {}", script, o.status);
+                debug!("script {} exited with non-zero status: {}", script, o.status);
+                return Err(AppError::CommandError(format!("script: {script} failed")))
             }
             let out = String::from_utf8_lossy(&*o.stdout);
             let err = String::from_utf8_lossy(&*o.stderr);
-            debug!("Script: {} STDOUT: {}", script, out);
-            debug!("Script: {} STDERR: {}", script, err);
+            debug!("script: {} STDOUT: {}", script, out);
+            debug!("script: {} STDERR: {}", script, err);
             Ok(out.to_string())
         }
         Err(e) => {
-            error!("Failed to execute subprocess: {}", e);
+            error!("failed to execute subprocess: {}", e);
             Err(AppError::CommandError(e.to_string()))
         }
     }
