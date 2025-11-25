@@ -26,7 +26,7 @@ struct Cli {
     env_file: Option<String>,
 
     /// Server host to proxy to, e.g. example.com or 192.168.0.10.
-    #[clap(short = 'u', long, value_name = "ORIGIN_HOST", env = "ORIGIN_HOST")]
+    #[clap(short = 'o', long, value_name = "ORIGIN_HOST", env = "ORIGIN_HOST")]
     origin_host: String,
 
     #[clap(short = 'l', long, value_name = "LISTEN_HOST", env = "LISTEN_HOST")]
@@ -47,7 +47,7 @@ struct Cli {
         env = "CHECK_COMMAND"
     )]
     check_command: String,
-    
+
     #[clap(short = 'w', long, value_name = "WAKE_COMMAND", env = "WAKE_COMMAND")]
     wake_command: String,
 
