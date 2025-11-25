@@ -36,6 +36,7 @@ impl ProxyHttp for SuspendProxy {
                 ))
             }
             Some(uri) => {
+                debug!("upstream: {}", uri);
                 if uri.starts_with("jellyfin.") {
                     Box::new(HttpPeer::new(&self.upstreams.jellyfin, false, "".to_string()))
                 }
