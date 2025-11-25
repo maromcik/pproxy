@@ -143,7 +143,7 @@ fn main() {
         suspended: AtomicBool::new(false),
         limit: Duration::from_secs(cli.suspend_timeout),
         waking: AtomicBool::new(false),
-        auto_suspend_enabled: AtomicBool::new(false),
+        auto_suspend_enabled: AtomicBool::new(true),
         commands: Commands {
             suspend: cli.suspend_command,
             wake: cli.wake_command,
