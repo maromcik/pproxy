@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use tokio::time::Instant;
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser, Default)]
@@ -63,11 +64,20 @@ struct Cli {
     /// Optional log level.
     #[clap(
         long,
-        value_name = "LOG_LEVEL",
-        env = "LOG_LEVEL",
+        value_name = "APP_LOG_LEVEL",
+        env = "APP_LOG_LEVEL",
         default_value = "info"
     )]
-    log_level: String,
+    app_log_level: String,
+
+    /// Optional log level for all included components, such as pingora.
+    #[clap(
+        long,
+        value_name = "ALL_LOG_LEVEL",
+        env = "ALL_LOG_LEVEL",
+        default_value = ""
+    )]
+    all_log_level: String,
 }
 
 fn main() {
@@ -80,7 +90,7 @@ fn main() {
 
     let cli = Cli::parse();
 
-    let env = EnvFilter::new(cli.log_level);
+    let env = EnvFilter::new(format!("pproxy={},{}", cli.app_log_level, cli.all_log_level).as_str());
     let timer = tracing_subscriber::fmt::time::LocalTime::rfc_3339();
     tracing_subscriber::fmt()
         .with_timer(timer)
@@ -100,6 +110,8 @@ fn main() {
         waking: AtomicBool::new(false),
     });
 
+    info!("Bootstrap done");
+
     let monitor_service = MonitorService {
         state: state.clone(),
     };
@@ -116,5 +128,6 @@ fn main() {
     proxy_service.add_tcp(&cli.listen_host);
 
     server.add_service(proxy_service);
+    info!("Server starting");
     server.run_forever();
 }
