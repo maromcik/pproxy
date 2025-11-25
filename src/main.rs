@@ -1,5 +1,6 @@
 mod proxy;
 mod utils;
+mod error;
 
 use crate::proxy::{ImmichProxy, MonitorService, ServerState};
 use clap::Parser;
@@ -25,20 +26,28 @@ struct Cli {
     env_file: Option<String>,
 
     /// Server host to proxy to, e.g. example.com or 192.168.0.10.
-    #[clap(short = 's', long, value_name = "SERVER_HOST", env = "SERVER_HOST")]
-    server_host: String,
+    #[clap(short = 'u', long, value_name = "ORIGIN_HOST", env = "ORIGIN_HOST")]
+    origin_host: String,
 
     #[clap(short = 'l', long, value_name = "LISTEN_HOST", env = "LISTEN_HOST")]
     listen_host: String,
 
     #[clap(
-        short = 'c',
+        short = 's',
         long,
         value_name = "SUSPEND_COMMAND",
         env = "SUSPEND_COMMAND"
     )]
     suspend_command: String,
 
+    #[clap(
+        short = 'c',
+        long,
+        value_name = "CHECK_COMMAND",
+        env = "CHECK_COMMAND"
+    )]
+    check_command: String,
+    
     #[clap(short = 'w', long, value_name = "WAKE_COMMAND", env = "WAKE_COMMAND")]
     wake_command: String,
 
@@ -86,6 +95,7 @@ fn main() {
         suspended: AtomicBool::new(false),
         limit: Duration::from_secs(cli.suspend_timeout),
         suspend_command: cli.suspend_command,
+        check_command: cli.check_command,
         wake_command: cli.wake_command,
         waking: AtomicBool::new(false),
     });
@@ -98,7 +108,7 @@ fn main() {
     let mut proxy_service = http_proxy_service(
         &server.configuration,
         ImmichProxy {
-            upstream_addr: cli.server_host,
+            upstream_addr: cli.origin_host,
             state,
         },
     );

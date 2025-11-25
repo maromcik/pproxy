@@ -12,3 +12,4 @@ clap = {version = "4.5.53", features = ["env", "default", "derive"]}
 dotenvy = "0.15.7"
 tracing = { version = "0.1.41", features = ["async-await"]}
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "local-time", "time"] }
+thiserror = "2.0.17"

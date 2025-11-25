@@ -16,6 +16,7 @@ pub struct ServerState {
     pub limit: Duration,
     pub suspend_command: String,
     pub wake_command: String,
+    pub check_command: String,
     pub waking: AtomicBool,
 }
 
@@ -51,7 +52,7 @@ impl ProxyHttp for ImmichProxy {
         if suspended {
             if !self.state.waking.swap(true, Ordering::SeqCst) {
                 info!("Traffic detected! Waking system up (First Responder)...");
-                call_script(&self.state.wake_command).await;
+                let _ = call_script(&self.state.wake_command).await;
                 self.state.suspended.store(false, Ordering::SeqCst);
                 self.state.waking.store(false, Ordering::SeqCst);
                 let mut timer = self.state.timer.write().await;
@@ -99,7 +100,10 @@ impl Service for MonitorService {
                         if last_activity.elapsed() > self.state.limit {
                             drop(last_activity);
                             info!("Timeout reached. Suspending...");
-                            call_script(&self.state.suspend_command).await;
+                            let _ = call_script(&self.state.suspend_command).await;
+                            self.state.suspended.store(true, Ordering::Relaxed);
+                        }
+                        if call_script(&self.state.check_command).await.is_err() {
                             self.state.suspended.store(true, Ordering::Relaxed);
                         }
                     }
