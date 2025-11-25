@@ -68,8 +68,7 @@ impl ProxyHttp for ControlService {
         } else if path == "/status" {
             if let Some(stat_command) = &self.state.commands.status {
                 call_script(stat_command).await.ok()
-            }
-            else {
+            } else {
                 None
             }
         } else {

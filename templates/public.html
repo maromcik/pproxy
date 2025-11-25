@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="author" content="RM">
+    <title>PProxy Status Page</title>
+
+    <!-- TailwindCSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- HTMX CDN -->
+    <script src="https://unpkg.com/htmx.org@2.0.1"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/response-targets.js"></script>
+
+    <!-- FontAwesome CDN -->
+    <script src="https://kit.fontawesome.com/34be06a8e3.js" crossorigin="anonymous"></script>
+</head>
+
+<body class="bg-gray-100 text-gray-900 p-4">
+
+<div id="content-area" class="max-w-xl mx-auto space-y-6">
+
+    <!-- Status Fields -->
+    <div class="bg-white p-4 shadow rounded-lg border border-gray-200 space-y-2">
+        <p><strong>Auto-Suspend Enabled:</strong> {{ enabled }}</p>
+        <p><strong>System Suspended:</strong> {{ suspended }}</p>
+        <p><strong>Limit:</strong> {{ limit }}</p>
+    </div>
+
+    {% if let Some(m) = message %}
+    <!-- Message Box -->
+    <div id="message-box"
+         class="p-4 rounded-lg shadow bg-white border border-gray-200">
+        <p>{{ m }}</p>
+    </div>
+    {% endif %}
+</div>
+
+</body>
+</html>

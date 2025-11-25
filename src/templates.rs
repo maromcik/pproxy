@@ -9,3 +9,12 @@ pub struct ControlPageTemplate {
     pub suspended: bool,
     pub limit: String,
 }
+
+#[derive(Template, Serialize)]
+#[template(path = "public.html")]
+pub struct PublicPageTemplate {
+    pub message: Option<String>,
+    pub enabled: bool,
+    pub suspended: bool,
+    pub limit: String,
+}

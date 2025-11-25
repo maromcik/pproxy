@@ -6,8 +6,11 @@ use pingora::{Error, HTTPStatus};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use askama::Template;
+use pingora::http::ResponseHeader;
 use tokio::time::Instant;
 use tracing::debug;
+use crate::templates::{PublicPageTemplate};
 use crate::utils::call_script;
 
 pub struct SuspendProxy {
@@ -64,7 +67,7 @@ impl ProxyHttp for SuspendProxy {
 
     async fn request_filter(
         &self,
-        _session: &mut Session,
+        session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
         if self.state.auto_suspend_enabled.load(Ordering::Acquire)
@@ -78,6 +81,31 @@ impl ProxyHttp for SuspendProxy {
                 let mut timer = self.state.timer.write().await;
                 *timer = Instant::now();
                 info!("upstream woke up: timer reset");
+                let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
+                let suspended = self.state.suspended.load(Ordering::Acquire);
+                let limit = self.state.limit;
+                let tmpl = PublicPageTemplate {
+                    message: Some("The server is starting, please refresh this page".to_string()),
+                    enabled,
+                    suspended,
+                    limit: format!("{:?}", limit),
+                };
+
+                let Ok(body) = tmpl.render() else {
+                    return Err(Error::explain(HTTPStatus(500), "Failed to render template"));
+                };
+                let bytes = body.as_bytes().to_vec();
+
+                let mut response = ResponseHeader::build(200, Some(bytes.len()))?;
+                response.insert_header("Content-Type", "text/html; charset=utf-8")?;
+                let _ = response.insert_header("Content-Length", bytes.len().to_string());
+                session
+                    .write_response_header(Box::new(response), false)
+                    .await?;
+                session
+                    .write_response_body(Some(bytes.into()), false)
+                    .await?;
+                return Ok(true)
             } else {
                 while self.state.suspended.load(Ordering::Acquire) {
                     tokio::time::sleep(Duration::from_millis(50)).await;
