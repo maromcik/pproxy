@@ -67,9 +67,12 @@ impl ProxyHttp for ControlService {
             Some("Upstream SUSPENDED".to_string())
         } else if path == "/status" {
             if let Some(stat_command) = &self.state.commands.status {
-                call_script(stat_command).await.ok()
+                match call_script(stat_command).await {
+                    Ok(out) => Some(format!("{}", out)),
+                    Err(e) => Some(format!("Failed to execute command: {}", e)),
+                }
             } else {
-                None
+                Some("No status command configured".to_string())
             }
         } else {
             None
