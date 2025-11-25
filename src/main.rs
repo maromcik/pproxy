@@ -2,6 +2,7 @@ mod error;
 mod management;
 mod proxy;
 mod utils;
+mod templates;
 
 use crate::management::{ControlService, MonitorService};
 use crate::proxy::SuspendProxy;

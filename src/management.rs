@@ -1,5 +1,7 @@
 use crate::ServerState;
+use crate::templates::ControlPageTemplate;
 use crate::utils::call_script;
+use askama::Template;
 use async_trait::async_trait;
 use log::info;
 use pingora::http::ResponseHeader;
@@ -37,54 +39,60 @@ impl ProxyHttp for ControlService {
     async fn request_filter(&self, session: &mut Session, _ctx: &mut Self::CTX) -> Result<bool> {
         let path = session.req_header().uri.path();
 
-        let mut message = "".to_string();
-        if path == "/enable" {
+        let message = if path == "/enable" {
             self.state
                 .auto_suspend_enabled
                 .store(true, Ordering::Release);
             let mut timer = self.state.timer.write().await;
             *timer = Instant::now();
             info!("auto-suspend: enabled");
-            message = "Auto-suspend ENABLED.".to_string();
+            Some("Auto-suspend ENABLED.".to_string())
         } else if path == "/disable" {
             self.state
                 .auto_suspend_enabled
                 .store(false, Ordering::Release);
             info!("auto-suspend: disabled");
-            message = "Auto-suspend DISABLED.".to_string();
-        } else if path == "/status" {
-            if let Some(stat_command) = &self.state.commands.status
-                && let Ok(out) = call_script(stat_command).await
-            {
-                message = out;
-            }
-        }  else if path == "/resume" {
+            Some("Auto-suspend DISABLED.".to_string())
+        } else if path == "/resume" {
             let _ = call_script(&self.state.commands.wake).await;
             self.state.suspended.store(false, Ordering::Release);
             let mut timer = self.state.timer.write().await;
             *timer = Instant::now();
             info!("upstream woke up: timer reset");
-            message = "Upstream RESUME".to_string();
+            Some("Upstream RESUMED".to_string())
         } else if path == "/suspend" {
             let _ = call_script(&self.state.commands.suspend).await;
             self.state.suspended.store(true, Ordering::Release);
             info!("upstream suspended");
-            message = "Upstream SUSPENDED".to_string();
-        }
+            Some("Upstream SUSPENDED".to_string())
+        } else if path == "/status" {
+            if let Some(stat_command) = &self.state.commands.status {
+                call_script(stat_command).await.ok()
+            }
+            else {
+                None
+            }
+        } else {
+            None
+        };
 
         let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
         let suspended = self.state.suspended.load(Ordering::Acquire);
         let limit = self.state.limit;
-        message.push_str(
-            format!(
-                "\nAuto-Suspend: {}\nSystem Suspended: {}\nLimit: {:?}",
-                enabled, suspended, limit
-            )
-            .as_str(),
-        );
+        let tmpl = ControlPageTemplate {
+            message,
+            enabled,
+            suspended,
+            limit: format!("{:?}", limit),
+        };
 
-        let bytes = message.as_bytes().to_vec();
+        let Ok(body) = tmpl.render() else {
+            return Err(Error::explain(HTTPStatus(500), "Failed to render template"));
+        };
+        let bytes = body.as_bytes().to_vec();
+
         let mut response = ResponseHeader::build(200, Some(bytes.len()))?;
+        response.insert_header("Content-Type", "text/html; charset=utf-8")?;
         let _ = response.insert_header("Content-Length", bytes.len().to_string());
         session
             .write_response_header(Box::new(response), false)
@@ -92,7 +100,6 @@ impl ProxyHttp for ControlService {
         session
             .write_response_body(Some(bytes.into()), false)
             .await?;
-
         Ok(true)
     }
 }

@@ -13,3 +13,5 @@ dotenvy = "0.15.7"
 tracing = { version = "0.1.41", features = ["async-await"]}
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "local-time", "time"] }
 thiserror = "2.0.17"
+askama = "0.14.0"
+serde = { version = "1.0.228", features = ["derive"] }
