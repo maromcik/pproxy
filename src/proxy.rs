@@ -1,12 +1,11 @@
 use crate::{ServerState, Upstreams};
-use crate::utils::call_script;
 use async_trait::async_trait;
 use log::{error, info};
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
+use pingora::{Error, HTTPStatus};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use pingora::{Error, HTTPStatus};
 use tokio::time::Instant;
 use tracing::debug;
 
@@ -28,29 +27,34 @@ impl ProxyHttp for SuspendProxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<Box<HttpPeer>> {
-        error!("UPSTREAM: {:?}", session.req_header().headers.get("Host"));
-        let mut peer = match session.req_header().uri.host() {
-            None => {
-                return Err(Error::explain(
-                    HTTPStatus(404),
-                    "Endpoint not supported by pproxy",
-                ))
-            }
-            Some(uri) => {
-                info!("upstream: {}", uri);
-                if uri.starts_with("jellyfin.") {
-                    Box::new(HttpPeer::new(&self.upstreams.jellyfin, false, "".to_string()))
-                }
-                else if uri.starts_with("immich.") {
-                    Box::new(HttpPeer::new(&self.upstreams.immich, false, "".to_string()))
-                }
-                else {
-                    return Err(Error::explain(
-                        HTTPStatus(404),
-                        "Endpoint not supported by pproxy",
-                    ))
-                }
-            }
+        let Some(host) = session.req_header().headers.get("Host") else {
+            return Err(Error::explain(
+                HTTPStatus(404),
+                "Endpoint not supported by pproxy",
+            ));
+        };
+        info!("upstream: {:?}", host);
+        let mut peer = if host
+            .to_str()
+            .map_err(|e| pingora::Error::explain(HTTPStatus(400), format!("{e}")))?
+            .starts_with("jellyfin.")
+        {
+            Box::new(HttpPeer::new(
+                &self.upstreams.jellyfin,
+                false,
+                "".to_string(),
+            ))
+        } else if host
+            .to_str()
+            .map_err(|e| pingora::Error::explain(HTTPStatus(400), format!("{e}")))?
+            .starts_with("immich.")
+        {
+            Box::new(HttpPeer::new(&self.upstreams.immich, false, "".to_string()))
+        } else {
+            return Err(Error::explain(
+                HTTPStatus(404),
+                "Endpoint not supported by pproxy",
+            ));
         };
 
         peer.options.connection_timeout = Some(Duration::from_secs(30));
@@ -62,9 +66,9 @@ impl ProxyHttp for SuspendProxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
-        error!("UPSTREAM: {:?}", session.req_header().headers.get("Host"));
         if self.state.auto_suspend_enabled.load(Ordering::Acquire)
-            && self.state.suspended.load(Ordering::Acquire) {
+            && self.state.suspended.load(Ordering::Acquire)
+        {
             if !self.state.waking.swap(true, Ordering::AcqRel) {
                 info!("traffic detected: waking up upstream");
                 let _ = call_script(&self.state.commands.wake).await;
