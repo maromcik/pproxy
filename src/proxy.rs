@@ -1,7 +1,7 @@
 use crate::{ServerState, Upstreams};
 use crate::utils::call_script;
 use async_trait::async_trait;
-use log::info;
+use log::{error, info};
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -28,6 +28,7 @@ impl ProxyHttp for SuspendProxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<Box<HttpPeer>> {
+        error!("UPSTREAM: {:?}", session.req_header());
         let mut peer = match session.req_header().uri.host() {
             None => {
                 return Err(Error::explain(
@@ -36,7 +37,7 @@ impl ProxyHttp for SuspendProxy {
                 ))
             }
             Some(uri) => {
-                debug!("upstream: {}", uri);
+                info!("upstream: {}", uri);
                 if uri.starts_with("jellyfin.") {
                     Box::new(HttpPeer::new(&self.upstreams.jellyfin, false, "".to_string()))
                 }
@@ -58,9 +59,10 @@ impl ProxyHttp for SuspendProxy {
 
     async fn request_filter(
         &self,
-        _session: &mut Session,
+        session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
+        error!("FILTER: {:?}", session.req_header());
         if self.state.auto_suspend_enabled.load(Ordering::Acquire)
             && self.state.suspended.load(Ordering::Acquire) {
             if !self.state.waking.swap(true, Ordering::AcqRel) {
