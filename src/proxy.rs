@@ -38,7 +38,7 @@ impl ProxyHttp for ImmichProxy {
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<Box<HttpPeer>> {
         let mut peer = Box::new(HttpPeer::new(&self.upstream_addr, false, "".to_string()));
-        peer.options.connection_timeout = Some(Duration::from_secs(20));
+        peer.options.connection_timeout = Some(Duration::from_secs(30));
         Ok(peer)
     }
 
