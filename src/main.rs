@@ -4,12 +4,13 @@ mod proxy;
 mod utils;
 
 use crate::management::{ControlService, MonitorService};
-use crate::proxy::{ImmichProxy, ServerState};
+use crate::proxy::ImmichProxy;
 use clap::Parser;
 use pingora::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use tokio::time::Instant;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -35,7 +36,12 @@ struct Cli {
     #[clap(short = 'l', long, value_name = "LISTEN_HOST", env = "LISTEN_HOST")]
     listen_host: String,
 
-    #[clap(short = 'i', long, value_name = "LISTEN_CONTROL_HOST", env = "LISTEN_CONTROL_HOST")]
+    #[clap(
+        short = 'i',
+        long,
+        value_name = "LISTEN_CONTROL_HOST",
+        env = "LISTEN_CONTROL_HOST"
+    )]
     listen_control_host: String,
 
     #[clap(
@@ -51,6 +57,14 @@ struct Cli {
 
     #[clap(short = 'w', long, value_name = "WAKE_COMMAND", env = "WAKE_COMMAND")]
     wake_command: String,
+
+    #[clap(
+        short = 'g',
+        long,
+        value_name = "STATUS_COMMAND",
+        env = "STATUS_COMMAND"
+    )]
+    status_command: Option<String>,
 
     #[clap(
         short = 't',
@@ -78,6 +92,22 @@ struct Cli {
         default_value = ""
     )]
     all_log_level: String,
+}
+
+pub struct Commands {
+    pub suspend: String,
+    pub wake: String,
+    pub check: String,
+    pub status: Option<String>,
+}
+
+pub struct ServerState {
+    pub timer: RwLock<Instant>,
+    pub suspended: AtomicBool,
+    pub limit: Duration,
+    pub waking: AtomicBool,
+    pub auto_suspend_enabled: AtomicBool,
+    pub commands: Commands,
 }
 
 fn main() {
@@ -112,11 +142,14 @@ fn main() {
         timer: Instant::now().into(),
         suspended: AtomicBool::new(false),
         limit: Duration::from_secs(cli.suspend_timeout),
-        suspend_command: cli.suspend_command,
-        check_command: cli.check_command,
-        wake_command: cli.wake_command,
         waking: AtomicBool::new(false),
         auto_suspend_enabled: AtomicBool::new(false),
+        commands: Commands {
+            suspend: cli.suspend_command,
+            wake: cli.wake_command,
+            check: cli.check_command,
+            status: cli.status_command,
+        },
     });
 
     info!("Bootstrap done");
@@ -143,7 +176,6 @@ fn main() {
 
     proxy_service.add_tcp(&cli.listen_host);
     control_service.add_tcp(&cli.listen_control_host);
-
 
     server.add_service(proxy_service);
     server.add_service(control_service);

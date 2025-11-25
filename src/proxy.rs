@@ -1,24 +1,13 @@
+use crate::ServerState;
 use crate::utils::call_script;
 use async_trait::async_trait;
 use log::info;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
-use tokio::sync::RwLock;
 use tokio::time::Instant;
 use tracing::debug;
-
-pub struct ServerState {
-    pub timer: RwLock<Instant>,
-    pub suspended: AtomicBool,
-    pub limit: Duration,
-    pub suspend_command: String,
-    pub wake_command: String,
-    pub check_command: String,
-    pub waking: AtomicBool,
-    pub auto_suspend_enabled: AtomicBool
-}
 
 pub struct ImmichProxy {
     pub upstream_addr: String,
@@ -52,7 +41,7 @@ impl ProxyHttp for ImmichProxy {
         if suspended {
             if !self.state.waking.swap(true, Ordering::AcqRel) {
                 info!("traffic detected: waking up upstream");
-                let _ = call_script(&self.state.wake_command).await;
+                let _ = call_script(&self.state.commands.wake).await;
                 self.state.suspended.store(false, Ordering::Release);
                 self.state.waking.store(false, Ordering::Release);
                 let mut timer = self.state.timer.write().await;
@@ -73,4 +62,3 @@ impl ProxyHttp for ImmichProxy {
         Ok(false)
     }
 }
-

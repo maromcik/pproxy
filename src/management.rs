@@ -1,4 +1,4 @@
-use crate::proxy::ServerState;
+use crate::ServerState;
 use crate::utils::call_script;
 use async_trait::async_trait;
 use log::info;
@@ -34,14 +34,10 @@ impl ProxyHttp for ControlService {
         ))
     }
 
-    async fn request_filter(
-        &self,
-        session: &mut Session,
-        _ctx: &mut Self::CTX,
-    ) -> Result<bool> {
+    async fn request_filter(&self, session: &mut Session, _ctx: &mut Self::CTX) -> Result<bool> {
         let path = session.req_header().uri.path();
 
-        let mut message= "".to_string();
+        let mut message = "".to_string();
         if path == "/enable" {
             self.state
                 .auto_suspend_enabled
@@ -53,25 +49,34 @@ impl ProxyHttp for ControlService {
             self.state
                 .auto_suspend_enabled
                 .store(false, Ordering::Release);
-            let _ = call_script(&self.state.wake_command).await;
+            let _ = call_script(&self.state.commands.wake).await;
             self.state.suspended.store(false, Ordering::Release);
             self.state.waking.store(false, Ordering::Release);
             let mut timer = self.state.timer.write().await;
             *timer = Instant::now();
             info!("upstream woke up: timer reset");
             message = "Auto-suspend DISABLED.".to_string();
+        } else if path == "/status" {
+            if let Some(stat_command) = &self.state.commands.status
+                && let Ok(out) = call_script(stat_command).await
+            {
+                message = out;
+            }
         }
 
         let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
         let suspended = self.state.suspended.load(Ordering::Acquire);
-        message.push_str(format!("\nAuto-Suspend: {}\nSystem Suspended: {}", enabled, suspended).as_str());
+        message.push_str(
+            format!(
+                "\nAuto-Suspend: {}\nSystem Suspended: {}",
+                enabled, suspended
+            )
+            .as_str(),
+        );
 
         let bytes = message.as_bytes().to_vec();
         let mut response = ResponseHeader::build(200, Some(bytes.len()))?;
-        let _ = response.insert_header(
-            "Content-Length",
-            bytes.len().to_string(),
-        );
+        let _ = response.insert_header("Content-Length", bytes.len().to_string());
         session
             .write_response_header(Box::new(response), false)
             .await?;
@@ -111,11 +116,11 @@ impl Service for MonitorService {
                        && !self.state.suspended.load(Ordering::Acquire) {
                         let last_activity = self.state.timer.read().await;
                         if last_activity.elapsed() > self.state.limit {
-                            let _ = call_script(&self.state.suspend_command).await;
+                            let _ = call_script(&self.state.commands.suspend).await;
                             self.state.suspended.store(true, Ordering::Release);
                             info!("timeout reached: upstream suspended");
                         }
-                        if call_script(&self.state.check_command).await.is_err() {
+                        if call_script(&self.state.commands.check).await.is_err() {
                             info!("check command failed: setting suspend=true; the next request should wake up again");
                             self.state.suspended.store(true, Ordering::Release);
                         }
