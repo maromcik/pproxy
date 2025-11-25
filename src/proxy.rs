@@ -58,7 +58,7 @@ impl ProxyHttp for SuspendProxy {
             ));
         };
 
-        peer.options.connection_timeout = Some(Duration::from_secs(30));
+        peer.options.connection_timeout = Some(Duration::from_secs(120));
         Ok(peer)
     }
 
