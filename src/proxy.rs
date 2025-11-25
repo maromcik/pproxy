@@ -37,8 +37,8 @@ impl ProxyHttp for ImmichProxy {
         _session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
-        let suspended = self.state.suspended.load(Ordering::Acquire);
-        if suspended {
+        if self.state.auto_suspend_enabled.load(Ordering::Acquire)
+            && self.state.suspended.load(Ordering::Acquire) {
             if !self.state.waking.swap(true, Ordering::AcqRel) {
                 info!("traffic detected: waking up upstream");
                 let _ = call_script(&self.state.commands.wake).await;
