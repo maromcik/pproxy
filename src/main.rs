@@ -4,7 +4,7 @@ mod proxy;
 mod utils;
 
 use crate::management::{ControlService, MonitorService};
-use crate::proxy::ImmichProxy;
+use crate::proxy::SuspendProxy;
 use clap::Parser;
 use pingora::prelude::*;
 use std::sync::Arc;
@@ -101,6 +101,11 @@ pub struct Commands {
     pub status: Option<String>,
 }
 
+pub struct Upstreams {
+    pub jellyfin: String,
+    pub immich: String,
+}
+
 pub struct ServerState {
     pub timer: RwLock<Instant>,
     pub suspended: AtomicBool,
@@ -166,10 +171,14 @@ fn main() {
         },
     );
 
+
     let mut proxy_service = http_proxy_service(
         &server.configuration,
-        ImmichProxy {
-            upstream_addr: cli.origin_host,
+        SuspendProxy {
+            upstreams: Upstreams {
+                jellyfin: "192.168.0.32:8096".to_string(),
+                immich: "192.168.0.32:2283".to_string(),
+            },
             state,
         },
     );

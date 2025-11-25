@@ -1,4 +1,4 @@
-use crate::ServerState;
+use crate::{ServerState, Upstreams};
 use crate::utils::call_script;
 use async_trait::async_trait;
 use log::info;
@@ -6,16 +6,17 @@ use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use pingora::{Error, HTTPStatus};
 use tokio::time::Instant;
 use tracing::debug;
 
-pub struct ImmichProxy {
-    pub upstream_addr: String,
+pub struct SuspendProxy {
+    pub upstreams: Upstreams,
     pub state: Arc<ServerState>,
 }
 
 #[async_trait]
-impl ProxyHttp for ImmichProxy {
+impl ProxyHttp for SuspendProxy {
     type CTX = ();
 
     fn new_ctx(&self) -> Self::CTX {
@@ -24,10 +25,32 @@ impl ProxyHttp for ImmichProxy {
 
     async fn upstream_peer(
         &self,
-        _session: &mut Session,
+        session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<Box<HttpPeer>> {
-        let mut peer = Box::new(HttpPeer::new(&self.upstream_addr, false, "".to_string()));
+        let mut peer = match session.req_header().uri.host() {
+            None => {
+                return Err(Error::explain(
+                    HTTPStatus(404),
+                    "Endpoint not supported by pproxy",
+                ))
+            }
+            Some(uri) => {
+                if uri.starts_with("jellyfin.") {
+                    Box::new(HttpPeer::new(&self.upstreams.jellyfin, false, "".to_string()))
+                }
+                else if uri.starts_with("immich.") {
+                    Box::new(HttpPeer::new(&self.upstreams.immich, false, "".to_string()))
+                }
+                else {
+                    return Err(Error::explain(
+                        HTTPStatus(404),
+                        "Endpoint not supported by pproxy",
+                    ))
+                }
+            }
+        };
+
         peer.options.connection_timeout = Some(Duration::from_secs(30));
         Ok(peer)
     }
