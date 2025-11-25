@@ -68,7 +68,7 @@ impl ProxyHttp for ControlService {
         } else if path == "/suspend" {
             let _ = call_script(&self.state.commands.suspend).await;
             self.state.suspended.store(true, Ordering::Release);
-            info!("upstream shutdown: timer reset");
+            info!("upstream suspended");
             message = "Upstream SUSPENDED".to_string();
         }
 
