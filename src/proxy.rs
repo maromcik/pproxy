@@ -34,7 +34,7 @@ impl ProxyHttp for SuspendProxy {
                 "Endpoint not supported by pproxy",
             ));
         };
-        info!("upstream: {:?}", host);
+        debug!("upstream: {:?}", host);
         let mut peer = if host
             .to_str()
             .map_err(|e| pingora::Error::explain(HTTPStatus(400), format!("{e}")))?
@@ -64,7 +64,7 @@ impl ProxyHttp for SuspendProxy {
 
     async fn request_filter(
         &self,
-        session: &mut Session,
+        _session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
         if self.state.auto_suspend_enabled.load(Ordering::Acquire)
