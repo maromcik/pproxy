@@ -30,14 +30,18 @@ struct Cli {
     env_file: Option<String>,
 
     /// Server host to proxy to, e.g. example.com or 192.168.0.10.
-    #[clap(short = 'o', long, value_name = "ORIGIN_HOST", env = "ORIGIN_HOST")]
-    origin_host: String,
+    #[clap(short = 'j', long, value_name = "JELLYFIN_HOST", env = "JELLYFIN_HOST")]
+    jellyfin_host: String,
+
+    /// Server host to proxy to, e.g. example.com or 192.168.0.10.
+    #[clap(short = 'i', long, value_name = "IMMICH_HOST", env = "IMMICH_HOST")]
+    immich_host: String,
 
     #[clap(short = 'l', long, value_name = "LISTEN_HOST", env = "LISTEN_HOST")]
     listen_host: String,
 
     #[clap(
-        short = 'i',
+        short = 'm',
         long,
         value_name = "LISTEN_CONTROL_HOST",
         env = "LISTEN_CONTROL_HOST"
@@ -176,8 +180,8 @@ fn main() {
         &server.configuration,
         SuspendProxy {
             upstreams: Upstreams {
-                jellyfin: "192.168.0.32:8096".to_string(),
-                immich: "192.168.0.32:2283".to_string(),
+                jellyfin: cli.jellyfin_host,
+                immich: cli.immich_host,
             },
             state,
         },
