@@ -28,7 +28,7 @@ impl ProxyHttp for SuspendProxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<Box<HttpPeer>> {
-        error!("UPSTREAM: {:?}", session.req_header());
+        error!("UPSTREAM: {:?}", session.req_header().headers.get("Host"));
         let mut peer = match session.req_header().uri.host() {
             None => {
                 return Err(Error::explain(
@@ -62,7 +62,7 @@ impl ProxyHttp for SuspendProxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
-        error!("FILTER: {:?}", session.req_header());
+        error!("UPSTREAM: {:?}", session.req_header().headers.get("Host"));
         if self.state.auto_suspend_enabled.load(Ordering::Acquire)
             && self.state.suspended.load(Ordering::Acquire) {
             if !self.state.waking.swap(true, Ordering::AcqRel) {
