@@ -44,17 +44,13 @@ impl ProxyHttp for ControlService {
                 .store(true, Ordering::Release);
             let mut timer = self.state.timer.write().await;
             *timer = Instant::now();
+            info!("auto-suspend: enabled");
             message = "Auto-suspend ENABLED.".to_string();
         } else if path == "/disable" {
             self.state
                 .auto_suspend_enabled
                 .store(false, Ordering::Release);
-            let _ = call_script(&self.state.commands.wake).await;
-            self.state.suspended.store(false, Ordering::Release);
-            self.state.waking.store(false, Ordering::Release);
-            let mut timer = self.state.timer.write().await;
-            *timer = Instant::now();
-            info!("upstream woke up: timer reset");
+            info!("auto-suspend: disabled");
             message = "Auto-suspend DISABLED.".to_string();
         } else if path == "/status" {
             if let Some(stat_command) = &self.state.commands.status
@@ -62,14 +58,27 @@ impl ProxyHttp for ControlService {
             {
                 message = out;
             }
+        }  else if path == "/start" {
+            let _ = call_script(&self.state.commands.wake).await;
+            self.state.suspended.store(false, Ordering::Release);
+            let mut timer = self.state.timer.write().await;
+            *timer = Instant::now();
+            info!("upstream woke up: timer reset");
+            message = "Server woke up".to_string();
+        } else if path == "/stop" {
+            let _ = call_script(&self.state.commands.suspend).await;
+            self.state.suspended.store(true, Ordering::Release);
+            info!("upstream shutdown: timer reset");
+            message = "Server woke up".to_string();
         }
 
         let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
         let suspended = self.state.suspended.load(Ordering::Acquire);
+        let limit = self.state.limit;
         message.push_str(
             format!(
-                "\nAuto-Suspend: {}\nSystem Suspended: {}",
-                enabled, suspended
+                "\nAuto-Suspend: {}\nSystem Suspended: {}\nLimit: {:?}",
+                enabled, suspended, limit
             )
             .as_str(),
         );
