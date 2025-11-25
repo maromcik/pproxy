@@ -58,18 +58,18 @@ impl ProxyHttp for ControlService {
             {
                 message = out;
             }
-        }  else if path == "/start" {
+        }  else if path == "/resume" {
             let _ = call_script(&self.state.commands.wake).await;
             self.state.suspended.store(false, Ordering::Release);
             let mut timer = self.state.timer.write().await;
             *timer = Instant::now();
             info!("upstream woke up: timer reset");
-            message = "Server woke up".to_string();
-        } else if path == "/stop" {
+            message = "Upstream RESUME".to_string();
+        } else if path == "/suspend" {
             let _ = call_script(&self.state.commands.suspend).await;
             self.state.suspended.store(true, Ordering::Release);
             info!("upstream shutdown: timer reset");
-            message = "Server woke up".to_string();
+            message = "Upstream SUSPENDED".to_string();
         }
 
         let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
