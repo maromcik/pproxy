@@ -1,6 +1,6 @@
 use crate::{ServerState, Upstreams};
 use async_trait::async_trait;
-use log::{error, info};
+use log::{info};
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use pingora::{Error, HTTPStatus};
 use std::sync::Arc;
@@ -8,6 +8,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::time::Instant;
 use tracing::debug;
+use crate::utils::call_script;
 
 pub struct SuspendProxy {
     pub upstreams: Upstreams,
