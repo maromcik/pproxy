@@ -7,15 +7,15 @@ pub async fn call_script(script: &str) -> Result<String, AppError> {
 
     match output {
         Ok(o) => {
+            let out = String::from_utf8_lossy(&*o.stdout);
+            let err = String::from_utf8_lossy(&*o.stderr);
             if !o.status.success() {
                 debug!(
                     "script {} exited with non-zero status: {}",
                     script, o.status
                 );
-                return Err(AppError::CommandError(format!("script: {script} failed")));
+                return Err(AppError::CommandError(format!("script: {script} failed; {err}")));
             }
-            let out = String::from_utf8_lossy(&*o.stdout);
-            let err = String::from_utf8_lossy(&*o.stderr);
             debug!("script: {} STDOUT: {}", script, out);
             debug!("script: {} STDERR: {}", script, err);
             Ok(out.to_string())
