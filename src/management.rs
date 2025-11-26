@@ -86,6 +86,7 @@ impl ProxyHttp for ControlService {
             enabled,
             suspended,
             limit: format!("{:?}", limit),
+            elapsed: format!("{:?}", self.state.timer.read().await.elapsed()),
         };
 
         let Ok(body) = tmpl.render() else {

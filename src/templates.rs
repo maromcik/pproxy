@@ -8,6 +8,7 @@ pub struct ControlPageTemplate {
     pub enabled: bool,
     pub suspended: bool,
     pub limit: String,
+    pub elapsed: String,
 }
 
 #[derive(Template, Serialize)]
