@@ -17,5 +17,4 @@ pub struct PublicPageTemplate {
     pub message: Option<String>,
     pub enabled: bool,
     pub suspended: bool,
-    pub limit: String,
 }

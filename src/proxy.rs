@@ -1,5 +1,4 @@
 use crate::templates::PublicPageTemplate;
-use crate::utils::call_script;
 use crate::{ServerState, Upstreams};
 use askama::Template;
 use async_trait::async_trait;
@@ -73,53 +72,39 @@ impl ProxyHttp for SuspendProxy {
         if self.state.auto_suspend_enabled.load(Ordering::Acquire)
             && self.state.suspended.load(Ordering::Acquire)
         {
-            if !self.state.waking.swap(true, Ordering::AcqRel) {
-                info!(
-                    "traffic detected: waking up upstream: from source: {:?}, header X-Forwarded-For: {:?}, http method: {:?}, header host: {:?}, endpoint: {:?}, header User-Agent: {:?}",
-                    session.client_addr(),
-                    session.req_header().headers.get("X-Forwarded-For"),
-                    session.req_header().method,
-                    session.req_header().headers.get("Host"),
-                    session.req_header().uri.path(),
-                    session.req_header().headers.get("User-Agent"),
-                );
-                let _ = call_script(&self.state.commands.wake).await;
-                self.state.suspended.store(false, Ordering::Release);
-                self.state.waking.store(false, Ordering::Release);
-                let mut timer = self.state.timer.write().await;
-                *timer = Instant::now();
-                info!("upstream woke up: timer reset");
-                let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
-                let suspended = self.state.suspended.load(Ordering::Acquire);
-                let limit = self.state.limit;
-                let tmpl = PublicPageTemplate {
-                    message: Some("The server is starting, please refresh this page".to_string()),
-                    enabled,
-                    suspended,
-                    limit: format!("{:?}", limit),
-                };
+            info!(
+                "traffic detected: waking up upstream: from source: {:?}, header X-Forwarded-For: {:?}, http method: {:?}, header host: {:?}, endpoint: {:?}, header User-Agent: {:?}",
+                session.client_addr(),
+                session.req_header().headers.get("X-Forwarded-For"),
+                session.req_header().method,
+                session.req_header().headers.get("Host"),
+                session.req_header().uri.path(),
+                session.req_header().headers.get("User-Agent"),
+            );
+            self.state.wake_up.store(true, Ordering::Release);
+            let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
+            let suspended = self.state.suspended.load(Ordering::Acquire);
+            let tmpl = PublicPageTemplate {
+                message: Some("The server is starting, please refresh this page".to_string()),
+                enabled,
+                suspended,
+            };
 
-                let Ok(body) = tmpl.render() else {
-                    return Err(Error::explain(HTTPStatus(500), "Failed to render template"));
-                };
-                let bytes = body.as_bytes().to_vec();
+            let Ok(body) = tmpl.render() else {
+                return Err(Error::explain(HTTPStatus(500), "Failed to render template"));
+            };
+            let bytes = body.as_bytes().to_vec();
 
-                let mut response = ResponseHeader::build(200, Some(bytes.len()))?;
-                response.insert_header("Content-Type", "text/html; charset=utf-8")?;
-                let _ = response.insert_header("Content-Length", bytes.len().to_string());
-                session
-                    .write_response_header(Box::new(response), false)
-                    .await?;
-                session
-                    .write_response_body(Some(bytes.into()), false)
-                    .await?;
-                return Ok(true);
-            } else {
-                while self.state.suspended.load(Ordering::Acquire) {
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    debug!("waiting for another request to wake up upstream");
-                }
-            }
+            let mut response = ResponseHeader::build(200, Some(bytes.len()))?;
+            response.insert_header("Content-Type", "text/html; charset=utf-8")?;
+            let _ = response.insert_header("Content-Length", bytes.len().to_string());
+            session
+                .write_response_header(Box::new(response), false)
+                .await?;
+            session
+                .write_response_body(Some(bytes.into()), false)
+                .await?;
+            return Ok(true);
         } else {
             let mut timer = self.state.timer.write().await;
             *timer = Instant::now();

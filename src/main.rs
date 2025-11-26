@@ -1,8 +1,8 @@
 mod error;
 mod management;
 mod proxy;
-mod utils;
 mod templates;
+mod utils;
 
 use crate::management::{ControlService, MonitorService};
 use crate::proxy::SuspendProxy;
@@ -115,7 +115,7 @@ pub struct ServerState {
     pub timer: RwLock<Instant>,
     pub suspended: AtomicBool,
     pub limit: Duration,
-    pub waking: AtomicBool,
+    pub wake_up: AtomicBool,
     pub auto_suspend_enabled: AtomicBool,
     pub commands: Commands,
 }
@@ -152,7 +152,7 @@ fn main() {
         timer: Instant::now().into(),
         suspended: AtomicBool::new(false),
         limit: Duration::from_secs(cli.suspend_timeout),
-        waking: AtomicBool::new(false),
+        wake_up: AtomicBool::new(false),
         auto_suspend_enabled: AtomicBool::new(true),
         commands: Commands {
             suspend: cli.suspend_command,
@@ -175,7 +175,6 @@ fn main() {
             state: state.clone(),
         },
     );
-
 
     let mut proxy_service = http_proxy_service(
         &server.configuration,
