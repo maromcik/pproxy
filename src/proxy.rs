@@ -75,12 +75,13 @@ impl ProxyHttp for SuspendProxy {
         {
             if !self.state.waking.swap(true, Ordering::AcqRel) {
                 info!(
-                    "traffic detected: waking up upstream: from source: {:?}, endpoint: {:?}, header host: {:?}, header X-Forwarded-For: {:?}, header User-Agent: {:?}",
+                    "traffic detected: waking up upstream: from source: {:?}, header X-Forwarded-For: {:?}, http method: {:?}, header host: {:?}, endpoint: {:?}, header User-Agent: {:?}",
                     session.client_addr(),
-                    session.req_header().uri.path(),
-                    session.req_header().headers.get("Host"),
                     session.req_header().headers.get("X-Forwarded-For"),
-                    session.req_header().headers.get("User-Agent")
+                    session.req_header().method,
+                    session.req_header().headers.get("Host"),
+                    session.req_header().uri.path(),
+                    session.req_header().headers.get("User-Agent"),
                 );
                 let _ = call_script(&self.state.commands.wake).await;
                 self.state.suspended.store(false, Ordering::Release);
