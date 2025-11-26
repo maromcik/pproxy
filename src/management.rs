@@ -142,7 +142,6 @@ impl Service for MonitorService {
             let wall_time = Instant::now();
             sleep(interval).await;
             if !self.state.auto_suspend_enabled.load(Ordering::Acquire) {
-                self.state.time_monitoring.write().await.active_time += wall_time.elapsed();
                 continue;
             }
             if call_script(&self.state.commands.check).await.is_err() {
@@ -161,8 +160,8 @@ impl Service for MonitorService {
                     let mut timer = self.state.timer.write().await;
                     *timer = Instant::now();
                     info!("upstream woke up: timer reset");
-                    self.state.time_monitoring.write().await.suspended_time += wall_time.elapsed();
                 }
+                self.state.time_monitoring.write().await.suspended_time += wall_time.elapsed();
             } else {
                 let last_activity = self.state.timer.read().await;
                 if !self.state.wake_up.load(Ordering::Acquire)
