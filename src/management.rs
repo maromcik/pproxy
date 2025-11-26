@@ -180,10 +180,11 @@ impl Service for MonitorService {
                             warn!("error while suspending upstream: {}", e);
                         }
                     }
-                }
-                if let Err(e) = call_script(&self.state.commands.check).await {
-                    info!("error while checking upstream, waking up again: {}", e);
-                    let _ = call_script(&self.state.commands.wake).await;
+                } else {
+                    if let Err(e) = call_script(&self.state.commands.check).await {
+                        info!("error while checking upstream, waking up again: {}", e);
+                        let _ = call_script(&self.state.commands.wake).await;
+                    }
                 }
                 self.state.time_monitoring.write().await.active_time += wall_time.elapsed();
             }
