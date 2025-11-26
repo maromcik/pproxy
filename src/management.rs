@@ -102,8 +102,14 @@ impl ProxyHttp for ControlService {
             waking_up: self.state.wake_up.load(Ordering::Relaxed),
             limit: format!("{:?}", self.state.limit),
             elapsed: format!("{:.2?}", self.state.timer.read().await.elapsed()),
-            active_time: format!("{:.2?} m", time_monitoring.active_time.as_secs() as f64 / 60_f64),
-            suspended_time: format!("{:.2?} m", time_monitoring.suspended_time.as_secs() as f64 / 60_f64),
+            active_time: format!(
+                "{:.2?} m",
+                time_monitoring.active_time.as_secs() as f64 / 60_f64
+            ),
+            suspended_time: format!(
+                "{:.2?} m",
+                time_monitoring.suspended_time.as_secs() as f64 / 60_f64
+            ),
         };
 
         let Ok(body) = tmpl.render() else {
@@ -156,8 +162,13 @@ impl Service for MonitorService {
             if self.state.suspended.load(Ordering::Acquire) {
                 if self.state.wake_up.load(Ordering::Acquire) {
                     info!("waking up upstream");
+                    let _ = call_script(&self.state.commands.wake).await;
                     while let Err(e) = call_script(&self.state.commands.check).await {
-                        info!("error while checking upstream during wake up, waking up again: {}", e);
+                        info!(
+                            "error while checking upstream during wake up, waking up again: {}",
+                            e
+                        );
+                        let _ = call_script(&self.state.commands.wake).await;
                     }
                     self.state.suspended.store(false, Ordering::Release);
                     self.state.wake_up.store(false, Ordering::Release);
@@ -184,8 +195,13 @@ impl Service for MonitorService {
                     }
                 } else {
                     while let Err(e) = call_script(&self.state.commands.check).await {
-                        info!("error while checking upstream that should be active, waking up again: {}", e);
+                        info!(
+                            "error while checking upstream that should be active, waking up again: {}",
+                            e
+                        );
+                        let _ = call_script(&self.state.commands.wake).await;
                     }
+                    debug!("upstream active: no need to suspend");
                 }
                 self.state.time_monitoring.write().await.active_time += wall_time.elapsed();
             }
