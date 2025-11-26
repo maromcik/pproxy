@@ -126,7 +126,8 @@ impl Service for MonitorService {
                 && !self.state.suspended.load(Ordering::Acquire)
             {
                 let last_activity = self.state.timer.read().await;
-                if last_activity.elapsed() > self.state.limit {
+                if !self.state.wake_up.load(Ordering::Acquire)
+                    && last_activity.elapsed() > self.state.limit {
                     drop(last_activity);
                     let _ = call_script(&self.state.commands.suspend).await;
                     self.state.suspended.store(true, Ordering::Release);
