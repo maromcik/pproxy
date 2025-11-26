@@ -3,7 +3,7 @@ use crate::templates::ControlPageTemplate;
 use crate::utils::call_script;
 use askama::Template;
 use async_trait::async_trait;
-use log::{info, warn};
+use log::{debug, info, warn};
 use pingora::http::ResponseHeader;
 use pingora::prelude::*;
 use pingora::server::{ListenFds, ShutdownWatch};
@@ -142,21 +142,22 @@ impl Service for MonitorService {
             let wall_time = Instant::now();
             sleep(interval).await;
             if !self.state.auto_suspend_enabled.load(Ordering::Acquire) {
+                debug!("auto-suspend disabled: skipping monitoring");
                 continue;
             }
             if call_script(&self.state.commands.check).await.is_err() {
-                self.state.suspended.store(true, Ordering::Release)
+                self.state.suspended.store(true, Ordering::Release);
+                debug!("check failed: upstream suspended");
             } else {
-                self.state.suspended.store(false, Ordering::Release)
+                self.state.suspended.store(false, Ordering::Release);
+                debug!("check succeeded: upstream active");
             }
 
             if self.state.suspended.load(Ordering::Acquire) {
                 if self.state.wake_up.load(Ordering::Acquire) {
                     info!("waking up upstream");
-                    let _ = call_script(&self.state.commands.wake).await;
                     while let Err(e) = call_script(&self.state.commands.check).await {
-                        info!("error while checking upstream, waking up again: {}", e);
-                        let _ = call_script(&self.state.commands.wake).await;
+                        info!("error while checking upstream during wake up, waking up again: {}", e);
                     }
                     self.state.suspended.store(false, Ordering::Release);
                     self.state.wake_up.store(false, Ordering::Release);
@@ -171,6 +172,7 @@ impl Service for MonitorService {
                     && last_activity.elapsed() > self.state.limit
                 {
                     drop(last_activity);
+                    info!("timeout reached: suspending upstream");
                     match call_script(&self.state.commands.suspend).await {
                         Ok(_) => {
                             self.state.suspended.store(true, Ordering::Release);
@@ -181,9 +183,8 @@ impl Service for MonitorService {
                         }
                     }
                 } else {
-                    if let Err(e) = call_script(&self.state.commands.check).await {
-                        info!("error while checking upstream, waking up again: {}", e);
-                        let _ = call_script(&self.state.commands.wake).await;
+                    while let Err(e) = call_script(&self.state.commands.check).await {
+                        info!("error while checking upstream that should be active, waking up again: {}", e);
                     }
                 }
                 self.state.time_monitoring.write().await.active_time += wall_time.elapsed();
