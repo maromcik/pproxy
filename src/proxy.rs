@@ -73,13 +73,24 @@ impl ProxyHttp for SuspendProxy {
             && self.state.suspended.load(Ordering::Acquire)
         {
             info!(
-                "traffic detected: waking up upstream: from source: {:?}, header X-Forwarded-For: {:?}, http method: {:?}, header host: {:?}, endpoint: {:?}, header User-Agent: {:?}",
-                session.client_addr(),
-                session.req_header().headers.get("X-Forwarded-For"),
-                session.req_header().method,
-                session.req_header().headers.get("Host"),
+                "traffic detected: {:?} -- {:?} {:?} {:?}; User-Agent: {:?}",
+                session
+                    .req_header()
+                    .headers
+                    .get("X-Forwarded-For")
+                    .map(|h| h.to_str().unwrap_or("").to_string()),
+                session.req_header().method.as_str(),
+                session
+                    .req_header()
+                    .headers
+                    .get("Host")
+                    .map(|h| h.to_str().unwrap_or("").to_string()),
                 session.req_header().uri.path(),
-                session.req_header().headers.get("User-Agent"),
+                session
+                    .req_header()
+                    .headers
+                    .get("User-Agent")
+                    .map(|h| h.to_str().unwrap_or("").to_string()),
             );
             self.state.wake_up.store(true, Ordering::Release);
             let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);

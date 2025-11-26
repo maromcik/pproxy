@@ -138,6 +138,7 @@ impl Service for MonitorService {
                 }
             } else {
                 if self.state.wake_up.load(Ordering::Acquire) {
+                    info!("waking up upstream");
                     let _ = call_script(&self.state.commands.wake).await;
                     while let Err(e) = call_script(&self.state.commands.check).await {
                         info!("error while checking upstream, waking up again: {}", e);
