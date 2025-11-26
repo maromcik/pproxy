@@ -111,6 +111,11 @@ pub struct Upstreams {
     pub immich: String,
 }
 
+pub struct TimeMonitoring {
+    pub active_time: Duration,
+    pub suspended_time: Duration,
+}
+
 pub struct ServerState {
     pub timer: RwLock<Instant>,
     pub suspended: AtomicBool,
@@ -118,6 +123,7 @@ pub struct ServerState {
     pub wake_up: AtomicBool,
     pub auto_suspend_enabled: AtomicBool,
     pub commands: Commands,
+    pub time_monitoring: RwLock<TimeMonitoring>,
 }
 
 fn main() {
@@ -160,6 +166,10 @@ fn main() {
             check: cli.check_command,
             status: cli.status_command,
         },
+        time_monitoring: RwLock::new(TimeMonitoring {
+            active_time: Duration::from_secs(0),
+            suspended_time: Duration::from_secs(0),
+        }),
     });
 
     info!("Bootstrap done");

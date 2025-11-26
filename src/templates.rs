@@ -10,6 +10,8 @@ pub struct ControlPageTemplate {
     pub waking_up: bool,
     pub limit: String,
     pub elapsed: String,
+    pub active_time: String,
+    pub suspended_time: String
 }
 
 #[derive(Template, Serialize)]

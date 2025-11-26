@@ -94,7 +94,7 @@ impl ProxyHttp for ControlService {
         } else {
             None
         };
-        
+        let time_monitoring = self.state.time_monitoring.read().await;
         let tmpl = ControlPageTemplate {
             message,
             enabled: self.state.auto_suspend_enabled.load(Ordering::Relaxed),
@@ -102,6 +102,8 @@ impl ProxyHttp for ControlService {
             waking_up: self.state.wake_up.load(Ordering::Relaxed),
             limit: format!("{:?}", self.state.limit),
             elapsed: format!("{:?}", self.state.timer.read().await.elapsed()),
+            active_time: format!("{:?}", time_monitoring.active_time),
+            suspended_time: format!("{:?}", time_monitoring.suspended_time),
         };
 
         let Ok(body) = tmpl.render() else {
@@ -145,6 +147,7 @@ impl Service for MonitorService {
                 self.state.suspended.store(true, Ordering::Release)
             }
             if self.state.suspended.load(Ordering::Acquire) {
+                self.state.time_monitoring.write().await.suspended_time += interval;
                 if self.state.wake_up.load(Ordering::Acquire) {
                     info!("waking up upstream");
                     let _ = call_script(&self.state.commands.wake).await;
@@ -159,6 +162,7 @@ impl Service for MonitorService {
                     info!("upstream woke up: timer reset");
                 }
             } else {
+                self.state.time_monitoring.write().await.active_time += interval;
                 let last_activity = self.state.timer.read().await;
                 if !self.state.wake_up.load(Ordering::Acquire)
                     && last_activity.elapsed() > self.state.limit
