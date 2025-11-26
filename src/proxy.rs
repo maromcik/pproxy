@@ -97,12 +97,11 @@ impl ProxyHttp for SuspendProxy {
             );
 
             self.state.wake_up.store(true, Ordering::Release);
-            let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
-            let suspended = self.state.suspended.load(Ordering::Acquire);
             let tmpl = PublicPageTemplate {
                 message: Some("The server is starting, please refresh this page".to_string()),
-                enabled,
-                suspended,
+                enabled: self.state.auto_suspend_enabled.load(Ordering::Relaxed),
+                suspended: self.state.suspended.load(Ordering::Relaxed),
+                waking_up: self.state.wake_up.load(Ordering::Relaxed),
             };
 
             let Ok(body) = tmpl.render() else {

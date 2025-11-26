@@ -7,6 +7,7 @@ pub struct ControlPageTemplate {
     pub message: Option<String>,
     pub enabled: bool,
     pub suspended: bool,
+    pub waking_up: bool,
     pub limit: String,
     pub elapsed: String,
 }
@@ -17,4 +18,5 @@ pub struct PublicPageTemplate {
     pub message: Option<String>,
     pub enabled: bool,
     pub suspended: bool,
+    pub waking_up: bool,
 }

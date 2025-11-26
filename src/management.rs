@@ -94,15 +94,13 @@ impl ProxyHttp for ControlService {
         } else {
             None
         };
-
-        let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
-        let suspended = self.state.suspended.load(Ordering::Acquire);
-        let limit = self.state.limit;
+        
         let tmpl = ControlPageTemplate {
             message,
-            enabled,
-            suspended,
-            limit: format!("{:?}", limit),
+            enabled: self.state.auto_suspend_enabled.load(Ordering::Relaxed),
+            suspended: self.state.suspended.load(Ordering::Relaxed),
+            waking_up: self.state.wake_up.load(Ordering::Relaxed),
+            limit: format!("{:?}", self.state.limit),
             elapsed: format!("{:?}", self.state.timer.read().await.elapsed()),
         };
 
