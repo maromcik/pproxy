@@ -60,6 +60,7 @@ impl ProxyHttp for ControlService {
                     let mut timer = self.state.timer.write().await;
                     *timer = Instant::now();
                     let msg = "Upstream woke up: timer reset";
+                    info!("{msg}");
                     Some(msg.to_string())
                 }
                 Err(e) => {
