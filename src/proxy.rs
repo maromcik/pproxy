@@ -78,20 +78,24 @@ impl ProxyHttp for SuspendProxy {
                     .req_header()
                     .headers
                     .get("X-Forwarded-For")
-                    .map(|h| h.to_str().unwrap_or("").to_string()),
+                    .and_then(|h| h.to_str().ok())
+                    .unwrap_or_default(),
                 session.req_header().method.as_str(),
                 session
                     .req_header()
                     .headers
                     .get("Host")
-                    .map(|h| h.to_str().unwrap_or("").to_string()),
+                    .and_then(|h| h.to_str().ok())
+                    .unwrap_or_default(),
                 session.req_header().uri.path(),
                 session
                     .req_header()
                     .headers
                     .get("User-Agent")
-                    .map(|h| h.to_str().unwrap_or("").to_string()),
+                    .and_then(|h| h.to_str().ok())
+                    .unwrap_or_default(),
             );
+
             self.state.wake_up.store(true, Ordering::Release);
             let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
             let suspended = self.state.suspended.load(Ordering::Acquire);
