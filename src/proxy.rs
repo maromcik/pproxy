@@ -1,17 +1,17 @@
+use crate::templates::PublicPageTemplate;
+use crate::utils::call_script;
 use crate::{ServerState, Upstreams};
+use askama::Template;
 use async_trait::async_trait;
-use log::{info};
+use log::info;
+use pingora::http::ResponseHeader;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use pingora::{Error, HTTPStatus};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use askama::Template;
-use pingora::http::ResponseHeader;
 use tokio::time::Instant;
 use tracing::debug;
-use crate::templates::{PublicPageTemplate};
-use crate::utils::call_script;
 
 pub struct SuspendProxy {
     pub upstreams: Upstreams,
@@ -74,7 +74,14 @@ impl ProxyHttp for SuspendProxy {
             && self.state.suspended.load(Ordering::Acquire)
         {
             if !self.state.waking.swap(true, Ordering::AcqRel) {
-                info!("traffic detected: waking up upstream");
+                info!(
+                    "traffic detected: waking up upstream: from source: {:?}, endpoint: {:?}, header host: {:?}, header X-Forwarded-For: {:?}, header User-Agent: {:?}",
+                    session.client_addr(),
+                    session.req_header().uri.path(),
+                    session.req_header().headers.get("Host"),
+                    session.req_header().headers.get("X-Forwarded-For"),
+                    session.req_header().headers.get("User-Agent")
+                );
                 let _ = call_script(&self.state.commands.wake).await;
                 self.state.suspended.store(false, Ordering::Release);
                 self.state.waking.store(false, Ordering::Release);
@@ -105,7 +112,7 @@ impl ProxyHttp for SuspendProxy {
                 session
                     .write_response_body(Some(bytes.into()), false)
                     .await?;
-                return Ok(true)
+                return Ok(true);
             } else {
                 while self.state.suspended.load(Ordering::Acquire) {
                     tokio::time::sleep(Duration::from_millis(50)).await;
