@@ -102,8 +102,8 @@ impl ProxyHttp for ControlService {
             waking_up: self.state.wake_up.load(Ordering::Relaxed),
             limit: format!("{:?}", self.state.limit),
             elapsed: format!("{:?}", self.state.timer.read().await.elapsed()),
-            active_time: format!("{:?} m", time_monitoring.active_time.as_secs() / 60_u64),
-            suspended_time: format!("{:?} m", time_monitoring.suspended_time.as_secs() / 60_u64),
+            active_time: format!("{:?} m", time_monitoring.active_time.as_secs() as f64 / 60_f64),
+            suspended_time: format!("{:?} m", time_monitoring.suspended_time.as_secs() as f64 / 60_f64),
         };
 
         let Ok(body) = tmpl.render() else {
