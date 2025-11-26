@@ -68,7 +68,6 @@ impl ProxyHttp for ControlService {
                     Some(msg)
                 }
             }
-
         } else if path == "/suspend" {
             match call_script(&self.state.commands.suspend).await {
                 Ok(_) => {
@@ -83,7 +82,6 @@ impl ProxyHttp for ControlService {
                     Some(msg)
                 }
             }
-
         } else if path == "/status" {
             if let Some(stat_command) = &self.state.commands.status {
                 match call_script(stat_command).await {
@@ -139,14 +137,18 @@ impl Service for MonitorService {
         _listeners_per_fd: usize,
     ) {
         info!("Background Monitor Service Started");
-        let interval = Duration::from_millis(1000);
+        let interval = Duration::from_millis(500);
         loop {
+            if call_script(&self.state.commands.check).await.is_err() {
+                self.state.suspended.store(true, Ordering::Release)
+            }
             if self.state.auto_suspend_enabled.load(Ordering::Acquire)
                 && !self.state.suspended.load(Ordering::Acquire)
             {
                 let last_activity = self.state.timer.read().await;
                 if !self.state.wake_up.load(Ordering::Acquire)
-                    && last_activity.elapsed() > self.state.limit {
+                    && last_activity.elapsed() > self.state.limit
+                {
                     drop(last_activity);
                     match call_script(&self.state.commands.suspend).await {
                         Ok(_) => {
