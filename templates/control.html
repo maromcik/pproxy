@@ -76,11 +76,8 @@
 
     {% if let Some(m) = message %}
     <!-- Message Box -->
-    <div id="message-box"
-         class="p-4 rounded-lg shadow bg-white border border-gray-200 overflow-auto max-w-full">
-    <pre class="whitespace-pre-wrap break-words">
-        <code>{{ m }}</code>
-    </pre>
+    <div id="message-box" class="p-4 rounded-lg shadow bg-white border border-gray-200 overflow-auto max-w-full">
+        <pre class="whitespace-pre-wrap break-words"><code>{{ m }}</code></pre>
     </div>
     {% endif %}
 </div>
