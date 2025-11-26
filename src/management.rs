@@ -139,12 +139,28 @@ impl Service for MonitorService {
         info!("Background Monitor Service Started");
         let interval = Duration::from_millis(500);
         loop {
+            sleep(interval).await;
+            if !self.state.auto_suspend_enabled.load(Ordering::Acquire) {
+                continue;
+            }
             if call_script(&self.state.commands.check).await.is_err() {
                 self.state.suspended.store(true, Ordering::Release)
             }
-            if self.state.auto_suspend_enabled.load(Ordering::Acquire)
-                && !self.state.suspended.load(Ordering::Acquire)
-            {
+            if self.state.suspended.load(Ordering::Acquire) {
+                if self.state.wake_up.load(Ordering::Acquire) {
+                    info!("waking up upstream");
+                    let _ = call_script(&self.state.commands.wake).await;
+                    while let Err(e) = call_script(&self.state.commands.check).await {
+                        info!("error while checking upstream, waking up again: {}", e);
+                        let _ = call_script(&self.state.commands.wake).await;
+                    }
+                    self.state.suspended.store(false, Ordering::Release);
+                    self.state.wake_up.store(false, Ordering::Release);
+                    let mut timer = self.state.timer.write().await;
+                    *timer = Instant::now();
+                    info!("upstream woke up: timer reset");
+                }
+            } else {
                 let last_activity = self.state.timer.read().await;
                 if !self.state.wake_up.load(Ordering::Acquire)
                     && last_activity.elapsed() > self.state.limit
@@ -164,22 +180,7 @@ impl Service for MonitorService {
                     info!("error while checking upstream, waking up again: {}", e);
                     let _ = call_script(&self.state.commands.wake).await;
                 }
-            } else {
-                if self.state.wake_up.load(Ordering::Acquire) {
-                    info!("waking up upstream");
-                    let _ = call_script(&self.state.commands.wake).await;
-                    while let Err(e) = call_script(&self.state.commands.check).await {
-                        info!("error while checking upstream, waking up again: {}", e);
-                        let _ = call_script(&self.state.commands.wake).await;
-                    }
-                    self.state.suspended.store(false, Ordering::Release);
-                    self.state.wake_up.store(false, Ordering::Release);
-                    let mut timer = self.state.timer.write().await;
-                    *timer = Instant::now();
-                    info!("upstream woke up: timer reset");
-                }
             }
-            sleep(interval).await;
         }
     }
 
