@@ -3,7 +3,7 @@ use crate::templates::ControlPageTemplate;
 use crate::utils::call_script;
 use askama::Template;
 use async_trait::async_trait;
-use log::info;
+use log::{info, warn};
 use pingora::http::ResponseHeader;
 use pingora::prelude::*;
 use pingora::server::{ListenFds, ShutdownWatch};
@@ -46,25 +46,44 @@ impl ProxyHttp for ControlService {
             let mut timer = self.state.timer.write().await;
             *timer = Instant::now();
             info!("auto-suspend: enabled");
-            Some("Auto-suspend ENABLED.".to_string())
+            Some("Auto-suspend enabled.".to_string())
         } else if path == "/disable" {
             self.state
                 .auto_suspend_enabled
                 .store(false, Ordering::Release);
             info!("auto-suspend: disabled");
-            Some("Auto-suspend DISABLED.".to_string())
+            Some("Auto-suspend disabled.".to_string())
         } else if path == "/resume" {
-            let _ = call_script(&self.state.commands.wake).await;
-            self.state.suspended.store(false, Ordering::Release);
-            let mut timer = self.state.timer.write().await;
-            *timer = Instant::now();
-            info!("upstream woke up: timer reset");
-            Some("Upstream RESUMED".to_string())
+            match call_script(&self.state.commands.wake).await {
+                Ok(_) => {
+                    self.state.suspended.store(false, Ordering::Release);
+                    let mut timer = self.state.timer.write().await;
+                    *timer = Instant::now();
+                    let msg = "Upstream woke up: timer reset";
+                    Some(msg.to_string())
+                }
+                Err(e) => {
+                    let msg = format!("Upstream resume error: {e}");
+                    warn!("{msg}");
+                    Some(msg)
+                }
+            }
+
         } else if path == "/suspend" {
-            let _ = call_script(&self.state.commands.suspend).await;
-            self.state.suspended.store(true, Ordering::Release);
-            info!("upstream suspended");
-            Some("Upstream SUSPENDED".to_string())
+            match call_script(&self.state.commands.suspend).await {
+                Ok(_) => {
+                    let msg = "Upstream suspended";
+                    info!("{msg}");
+                    self.state.suspended.store(true, Ordering::Release);
+                    Some(msg.to_string())
+                }
+                Err(e) => {
+                    let msg = format!("Upstream suspend error: {e}");
+                    warn!("{msg}");
+                    Some(msg)
+                }
+            }
+
         } else if path == "/status" {
             if let Some(stat_command) = &self.state.commands.status {
                 match call_script(stat_command).await {
@@ -120,7 +139,7 @@ impl Service for MonitorService {
         _listeners_per_fd: usize,
     ) {
         info!("Background Monitor Service Started");
-        let interval = Duration::from_millis(500);
+        let interval = Duration::from_millis(1000);
         loop {
             if self.state.auto_suspend_enabled.load(Ordering::Acquire)
                 && !self.state.suspended.load(Ordering::Acquire)
@@ -129,9 +148,15 @@ impl Service for MonitorService {
                 if !self.state.wake_up.load(Ordering::Acquire)
                     && last_activity.elapsed() > self.state.limit {
                     drop(last_activity);
-                    let _ = call_script(&self.state.commands.suspend).await;
-                    self.state.suspended.store(true, Ordering::Release);
-                    info!("timeout reached: upstream suspended");
+                    match call_script(&self.state.commands.suspend).await {
+                        Ok(_) => {
+                            self.state.suspended.store(true, Ordering::Release);
+                            info!("timeout reached: upstream suspended");
+                        }
+                        Err(e) => {
+                            warn!("error while suspending upstream: {}", e);
+                        }
+                    }
                 }
                 if let Err(e) = call_script(&self.state.commands.check).await {
                     info!("error while checking upstream, waking up again: {}", e);
