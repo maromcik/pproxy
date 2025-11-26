@@ -97,28 +97,28 @@ impl ProxyHttp for SuspendProxy {
             );
 
             self.state.wake_up.store(true, Ordering::Release);
-            let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
-            let suspended = self.state.suspended.load(Ordering::Acquire);
-            let tmpl = PublicPageTemplate {
-                message: Some("The server is starting, please refresh this page".to_string()),
-                enabled,
-                suspended,
-            };
-
-            let Ok(body) = tmpl.render() else {
-                return Err(Error::explain(HTTPStatus(500), "Failed to render template"));
-            };
-            let bytes = body.as_bytes().to_vec();
-
-            let mut response = ResponseHeader::build(200, Some(bytes.len()))?;
-            response.insert_header("Content-Type", "text/html; charset=utf-8")?;
-            let _ = response.insert_header("Content-Length", bytes.len().to_string());
-            session
-                .write_response_header(Box::new(response), false)
-                .await?;
-            session
-                .write_response_body(Some(bytes.into()), false)
-                .await?;
+            // let enabled = self.state.auto_suspend_enabled.load(Ordering::Acquire);
+            // let suspended = self.state.suspended.load(Ordering::Acquire);
+            // let tmpl = PublicPageTemplate {
+            //     message: Some("The server is starting, please refresh this page".to_string()),
+            //     enabled,
+            //     suspended,
+            // };
+            //
+            // let Ok(body) = tmpl.render() else {
+            //     return Err(Error::explain(HTTPStatus(500), "Failed to render template"));
+            // };
+            // let bytes = body.as_bytes().to_vec();
+            //
+            // let mut response = ResponseHeader::build(200, Some(bytes.len()))?;
+            // response.insert_header("Content-Type", "text/html; charset=utf-8")?;
+            // let _ = response.insert_header("Content-Length", bytes.len().to_string());
+            // session
+            //     .write_response_header(Box::new(response), false)
+            //     .await?;
+            // session
+            //     .write_response_body(Some(bytes.into()), false)
+            //     .await?;
             return Ok(true);
         } else {
             let mut timer = self.state.timer.write().await;
