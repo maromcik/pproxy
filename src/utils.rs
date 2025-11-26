@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use log::{debug, error};
 use tokio::process::Command;
+use tracing::trace;
 
 pub async fn call_script(script: &str) -> Result<String, AppError> {
     let output = Command::new("bash").arg("-c").arg(script).output().await;
@@ -16,8 +17,8 @@ pub async fn call_script(script: &str) -> Result<String, AppError> {
                 );
                 return Err(AppError::CommandError(format!("script: {script} failed; {err}")));
             }
-            debug!("script: {} STDOUT: {}", script, out);
-            debug!("script: {} STDERR: {}", script, err);
+            trace!("script: {} STDOUT: {}", script, out);
+            trace!("script: {} STDERR: {}", script, err);
             Ok(out.to_string())
         }
         Err(e) => {
