@@ -196,7 +196,7 @@ impl Service for MonitorService {
                             warn!("error while suspending upstream: {}", e);
                         }
                     }
-                    sleep(interval).await;
+                    sleep(5 * interval).await;
                 } else {
                     while let Err(e) = call_script(&self.state.commands.check).await {
                         info!(
