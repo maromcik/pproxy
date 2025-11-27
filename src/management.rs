@@ -179,7 +179,9 @@ impl Service for MonitorService {
                     *timer = Instant::now();
                     info!("upstream woke up: timer reset");
                 }
+                info!("writing suspended time:");
                 self.state.time_monitoring.write().await.suspended_time += wall_time.elapsed();
+                info!("finished writing suspended time:");
             } else {
                 let last_activity = self.state.timer.read().await;
                 if !self.state.wake_up.load(Ordering::Acquire)
@@ -188,7 +190,9 @@ impl Service for MonitorService {
                     drop(last_activity);
                     info!("timeout reached: suspending upstream");
                     match call_script(&self.state.commands.suspend).await {
-                        Ok(_) => {
+                        Ok(res) => {
+                            info!("script returned: {res}");
+                            info!("setting variables");
                             self.state.suspended.store(true, Ordering::Release);
                             self.state.wake_up.store(false, Ordering::Release);
                             info!("timeout reached: upstream suspended");
@@ -197,6 +201,7 @@ impl Service for MonitorService {
                             warn!("error while suspending upstream: {}", e);
                         }
                     }
+                    info!("call script finished");
                     sleep(5 * interval).await;
                 } else {
                     while let Err(e) = call_script(&self.state.commands.check).await {
@@ -208,7 +213,9 @@ impl Service for MonitorService {
                     }
                     debug!("upstream active: no need to suspend");
                 }
+                info!("writing active time:");
                 self.state.time_monitoring.write().await.active_time += wall_time.elapsed();
+                info!("finished writing active time:");
             }
         }
     }
