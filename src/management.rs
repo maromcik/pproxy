@@ -59,17 +59,23 @@ impl ProxyHttp for ControlService {
             info!("{msg}");
             Some(msg.to_string())
         } else if path == "/suspend" {
-            match call_script(&self.state.commands.suspend).await {
-                Ok(_) => {
-                    let msg = "admin: upstream suspending";
-                    info!("{msg}");
-                    self.state.suspending.store(true, Ordering::Release);
-                    Some(msg.to_string())
-                }
-                Err(e) => {
-                    let msg = format!("admin: upstream suspend error: {e}");
-                    warn!("{msg}");
-                    Some(msg)
+            if self.state.suspending.load(Ordering::Acquire) {
+                let msg = "admin: upstream already suspending";
+                warn!("{msg}");
+                Some(msg.to_string())
+            } else {
+                match call_script(&self.state.commands.suspend).await {
+                    Ok(_) => {
+                        let msg = "admin: upstream suspending";
+                        info!("{msg}");
+                        self.state.suspending.store(true, Ordering::Release);
+                        Some(msg.to_string())
+                    }
+                    Err(e) => {
+                        let msg = format!("admin: upstream suspend error: {e}");
+                        warn!("{msg}");
+                        Some(msg)
+                    }
                 }
             }
         } else if path == "/status" {
