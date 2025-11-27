@@ -166,15 +166,6 @@ impl Service for MonitorService {
                 if self.state.wake_up.load(Ordering::Acquire) {
                     info!("waking up upstream");
                     let _ = call_script(&self.state.commands.wake).await;
-                    while let Err(e) = call_script(&self.state.commands.check).await {
-                        info!(
-                            "error while checking upstream during wake up, waking up again: {}",
-                            e
-                        );
-                        let _ = call_script(&self.state.commands.wake).await;
-                    }
-                    self.state.suspended.store(false, Ordering::Release);
-                    self.state.wake_up.store(false, Ordering::Release);
                     let mut timer = self.state.timer.write().await;
                     *timer = Instant::now();
                     info!("upstream woke up: timer reset");
@@ -199,7 +190,7 @@ impl Service for MonitorService {
                     }
                     sleep(5 * interval).await;
                 } else {
-                    while let Err(e) = call_script(&self.state.commands.check).await {
+                    if let Err(e) = call_script(&self.state.commands.check).await {
                         info!(
                             "error while checking upstream that should be active, waking up again: {}",
                             e
