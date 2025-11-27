@@ -98,7 +98,7 @@ impl ProxyHttp for SuspendProxy {
                         .unwrap_or_default(),
                 );
                 self.state.wake_up.store(true, Ordering::Release);
-                "The server is starting, the page will refresh automatically in a few seconds, and you should be redirected to immich/jellyfin."
+                "The server is starting, the page will be refreshing automatically until you are redirected to immich/jellyfin. If not, try refreshing the page manually after about 10 seconds."
             }
             (false, true) => "Auto suspend/wake up is disabled, please contact the administrator.",
             _ => {
