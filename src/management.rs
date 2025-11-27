@@ -142,13 +142,8 @@ impl Service for MonitorService {
         info!("Background Monitor Service Started");
         let interval = Duration::from_millis(1000);
         loop {
-            debug!("tick");
             let wall_time = Instant::now();
             sleep(interval).await;
-            if !self.state.auto_suspend_enabled.load(Ordering::Acquire) {
-                debug!("auto-suspend disabled: skipping monitoring");
-                continue;
-            }
             if call_script(&self.state.commands.check).await.is_err() {
                 self.state.suspended.store(true, Ordering::Release);
                 self.state.suspending.store(false, Ordering::Release);
@@ -157,6 +152,11 @@ impl Service for MonitorService {
                 self.state.suspended.store(false, Ordering::Release);
                 self.state.wake_up.store(false, Ordering::Release);
                 debug!("check succeeded: upstream active");
+            }
+
+            if !self.state.auto_suspend_enabled.load(Ordering::Acquire) {
+                debug!("auto-suspend disabled: skipping monitoring");
+                continue;
             }
 
             if self.state.suspended.load(Ordering::Acquire) {
