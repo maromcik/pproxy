@@ -157,6 +157,7 @@ impl Service for MonitorService {
                 debug!("check failed: upstream suspended");
             } else {
                 self.state.suspended.store(false, Ordering::Release);
+                self.state.wake_up.store(false, Ordering::Release);
                 debug!("check succeeded: upstream active");
             }
 
@@ -194,6 +195,7 @@ impl Service for MonitorService {
                             warn!("error while suspending upstream: {}", e);
                         }
                     }
+                    sleep(interval).await;
                 } else {
                     while let Err(e) = call_script(&self.state.commands.check).await {
                         info!(
