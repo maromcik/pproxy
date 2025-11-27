@@ -146,6 +146,7 @@ impl Service for MonitorService {
         info!("Background Monitor Service Started");
         let interval = Duration::from_millis(500);
         loop {
+            debug!("tick");
             let wall_time = Instant::now();
             sleep(interval).await;
             if !self.state.auto_suspend_enabled.load(Ordering::Acquire) {
