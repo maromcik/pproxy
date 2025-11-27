@@ -101,6 +101,7 @@ impl ProxyHttp for SuspendProxy {
                 message: Some("The server is starting, please refresh this page".to_string()),
                 enabled: self.state.auto_suspend_enabled.load(Ordering::Relaxed),
                 suspended: self.state.suspended.load(Ordering::Relaxed),
+                suspending: self.state.suspending.load(Ordering::Relaxed),
                 waking_up: self.state.wake_up.load(Ordering::Relaxed),
             };
 
