@@ -69,63 +69,68 @@ impl ProxyHttp for SuspendProxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
-        if self.state.auto_suspend_enabled.load(Ordering::Acquire)
-            && self.state.suspended.load(Ordering::Acquire)
-        {
-            info!(
-                "traffic detected: {:?} -- {:?} {:?} {:?}; User-Agent: {:?}",
-                session
-                    .req_header()
-                    .headers
-                    .get("X-Forwarded-For")
-                    .and_then(|h| h.to_str().ok())
-                    .unwrap_or_default(),
-                session.req_header().method.as_str(),
-                session
-                    .req_header()
-                    .headers
-                    .get("Host")
-                    .and_then(|h| h.to_str().ok())
-                    .unwrap_or_default(),
-                session.req_header().uri.path(),
-                session
-                    .req_header()
-                    .headers
-                    .get("User-Agent")
-                    .and_then(|h| h.to_str().ok())
-                    .unwrap_or_default(),
-            );
+        let message = match (
+            self.state.auto_suspend_enabled.load(Ordering::Acquire),
+            self.state.suspended.load(Ordering::Acquire),
+        ) {
+            (true, true) => {
+                info!(
+                    "traffic detected: {:?} -- {:?} {:?} {:?}; User-Agent: {:?}",
+                    session
+                        .req_header()
+                        .headers
+                        .get("X-Forwarded-For")
+                        .and_then(|h| h.to_str().ok())
+                        .unwrap_or_default(),
+                    session.req_header().method.as_str(),
+                    session
+                        .req_header()
+                        .headers
+                        .get("Host")
+                        .and_then(|h| h.to_str().ok())
+                        .unwrap_or_default(),
+                    session.req_header().uri.path(),
+                    session
+                        .req_header()
+                        .headers
+                        .get("User-Agent")
+                        .and_then(|h| h.to_str().ok())
+                        .unwrap_or_default(),
+                );
+                self.state.wake_up.store(true, Ordering::Release);
+                "The server is starting, please refresh this page"
+            }
+            (false, true) => "Auto suspend/wake up is disabled, please contact an administrator.",
+            _ => {
+                let mut timer = self.state.timer.write().await;
+                *timer = Instant::now();
+                debug!("upstream running: timer reset");
+                return Ok(false);
+            }
+        };
 
-            self.state.wake_up.store(true, Ordering::Release);
-            let tmpl = PublicPageTemplate {
-                message: Some("The server is starting, please refresh this page".to_string()),
-                enabled: self.state.auto_suspend_enabled.load(Ordering::Relaxed),
-                suspended: self.state.suspended.load(Ordering::Relaxed),
-                suspending: self.state.suspending.load(Ordering::Relaxed),
-                waking_up: self.state.wake_up.load(Ordering::Relaxed),
-            };
+        let tmpl = PublicPageTemplate {
+            message: Some(message.to_string()),
+            enabled: self.state.auto_suspend_enabled.load(Ordering::Relaxed),
+            suspended: self.state.suspended.load(Ordering::Relaxed),
+            suspending: self.state.suspending.load(Ordering::Relaxed),
+            waking_up: self.state.wake_up.load(Ordering::Relaxed),
+        };
 
-            let Ok(body) = tmpl.render() else {
-                return Err(Error::explain(HTTPStatus(500), "Failed to render template"));
-            };
-            let bytes = body.as_bytes().to_vec();
+        let Ok(body) = tmpl.render() else {
+            return Err(Error::explain(HTTPStatus(500), "Failed to render template"));
+        };
+        let bytes = body.as_bytes().to_vec();
 
-            let mut response = ResponseHeader::build(200, Some(bytes.len()))?;
-            response.insert_header("Content-Type", "text/html; charset=utf-8")?;
-            let _ = response.insert_header("Content-Length", bytes.len().to_string());
-            session
-                .write_response_header(Box::new(response), false)
-                .await?;
-            session
-                .write_response_body(Some(bytes.into()), false)
-                .await?;
-            return Ok(true);
-        } else {
-            let mut timer = self.state.timer.write().await;
-            *timer = Instant::now();
-            debug!("upstream running: timer reset")
-        }
-
-        Ok(false)
+        let mut response = ResponseHeader::build(200, Some(bytes.len()))?;
+        response.insert_header("Content-Type", "text/html; charset=utf-8")?;
+        let _ = response.insert_header("Content-Length", bytes.len().to_string());
+        session
+            .write_response_header(Box::new(response), false)
+            .await?;
+        session
+            .write_response_body(Some(bytes.into()), false)
+            .await?;
+        Ok(true)
     }
 }
