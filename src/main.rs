@@ -121,6 +121,7 @@ pub struct ServerState {
     pub suspended: AtomicBool,
     pub limit: Duration,
     pub wake_up: AtomicBool,
+    pub suspending: AtomicBool,
     pub auto_suspend_enabled: AtomicBool,
     pub commands: Commands,
     pub time_monitoring: RwLock<TimeMonitoring>,
@@ -159,6 +160,7 @@ fn main() {
         suspended: AtomicBool::new(false),
         limit: Duration::from_secs(cli.suspend_timeout),
         wake_up: AtomicBool::new(false),
+        suspending: AtomicBool::new(false),
         auto_suspend_enabled: AtomicBool::new(true),
         commands: Commands {
             suspend: cli.suspend_command,

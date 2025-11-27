@@ -8,6 +8,7 @@ pub struct ControlPageTemplate {
     pub enabled: bool,
     pub suspended: bool,
     pub waking_up: bool,
+    pub suspending: bool,
     pub limit: String,
     pub elapsed: String,
     pub active_time: String,

@@ -101,6 +101,7 @@ impl ProxyHttp for ControlService {
             enabled: self.state.auto_suspend_enabled.load(Ordering::Relaxed),
             suspended: self.state.suspended.load(Ordering::Relaxed),
             waking_up: self.state.wake_up.load(Ordering::Relaxed),
+            suspending: self.state.suspending.load(Ordering::Relaxed),
             limit: format!("{:?}", self.state.limit),
             elapsed: format!("{:.2?}", self.state.timer.read().await.elapsed()),
             active_time: format!(
@@ -144,7 +145,7 @@ impl Service for MonitorService {
         _listeners_per_fd: usize,
     ) {
         info!("Background Monitor Service Started");
-        let interval = Duration::from_millis(500);
+        let interval = Duration::from_millis(1000);
         loop {
             debug!("tick");
             let wall_time = Instant::now();
@@ -155,10 +156,10 @@ impl Service for MonitorService {
             }
             if call_script(&self.state.commands.check).await.is_err() {
                 self.state.suspended.store(true, Ordering::Release);
+                self.state.suspending.store(false, Ordering::Release);
                 debug!("check failed: upstream suspended");
             } else {
                 self.state.suspended.store(false, Ordering::Release);
-                self.state.wake_up.store(false, Ordering::Release);
                 debug!("check succeeded: upstream active");
             }
 
@@ -168,35 +169,35 @@ impl Service for MonitorService {
                     let _ = call_script(&self.state.commands.wake).await;
                     let mut timer = self.state.timer.write().await;
                     *timer = Instant::now();
+                    self.state.wake_up.store(false, Ordering::Release);
                     info!("upstream woke up: timer reset");
                 }
                 self.state.time_monitoring.write().await.suspended_time += wall_time.elapsed();
             } else {
                 let last_activity = self.state.timer.read().await;
-                if !self.state.wake_up.load(Ordering::Acquire)
-                    && last_activity.elapsed() > self.state.limit
+                if last_activity.elapsed() > self.state.limit
+                    && !self.state.wake_up.load(Ordering::Acquire)
+                    && !self.state.suspending.load(Ordering::Acquire)
                 {
                     drop(last_activity);
+                    self.state.suspending.store(true, Ordering::Release);
                     info!("timeout reached: suspending upstream");
                     match call_script(&self.state.commands.suspend).await {
                         Ok(_) => {
-                            self.state.suspended.store(true, Ordering::Release);
-                            self.state.wake_up.store(false, Ordering::Release);
                             info!("timeout reached: upstream suspended");
                         }
                         Err(e) => {
                             warn!("error while suspending upstream: {}", e);
                         }
                     }
-                    sleep(5 * interval).await;
                 } else {
-                    if let Err(e) = call_script(&self.state.commands.check).await {
-                        info!(
-                            "error while checking upstream that should be active, waking up again: {}",
-                            e
-                        );
-                        let _ = call_script(&self.state.commands.wake).await;
-                    }
+                    // if let Err(e) = call_script(&self.state.commands.check).await {
+                    //     info!(
+                    //         "error while checking upstream that should be active, waking up again: {}",
+                    //         e
+                    //     );
+                    //     let _ = call_script(&self.state.commands.wake).await;
+                    // }
                     debug!("upstream active: no need to suspend");
                 }
                 self.state.time_monitoring.write().await.active_time += wall_time.elapsed();
