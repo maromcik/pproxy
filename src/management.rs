@@ -54,31 +54,20 @@ impl ProxyHttp for ControlService {
             info!("auto-suspend: disabled");
             Some("Auto-suspend disabled.".to_string())
         } else if path == "/resume" {
-            match call_script(&self.state.commands.wake).await {
-                Ok(_) => {
-                    self.state.suspended.store(false, Ordering::Release);
-                    let mut timer = self.state.timer.write().await;
-                    *timer = Instant::now();
-                    let msg = "Upstream woke up: timer reset";
-                    info!("{msg}");
-                    Some(msg.to_string())
-                }
-                Err(e) => {
-                    let msg = format!("Upstream resume error: {e}");
-                    warn!("{msg}");
-                    Some(msg)
-                }
-            }
+            self.state.wake_up.store(true, Ordering::Release);
+            let msg = "admin: upstream waking up";
+            info!("{msg}");
+            Some(msg.to_string())
         } else if path == "/suspend" {
             match call_script(&self.state.commands.suspend).await {
                 Ok(_) => {
-                    let msg = "Upstream suspended";
+                    let msg = "admin: upstream suspending";
                     info!("{msg}");
-                    self.state.suspended.store(true, Ordering::Release);
+                    self.state.suspending.store(true, Ordering::Release);
                     Some(msg.to_string())
                 }
                 Err(e) => {
-                    let msg = format!("Upstream suspend error: {e}");
+                    let msg = format!("admin: upstream suspend error: {e}");
                     warn!("{msg}");
                     Some(msg)
                 }
@@ -170,7 +159,6 @@ impl Service for MonitorService {
                     let _ = call_script(&self.state.commands.wake).await;
                     let mut timer = self.state.timer.write().await;
                     *timer = Instant::now();
-                    info!("upstream woke up: timer reset");
                 }
                 self.state.time_monitoring.write().await.suspended_time += wall_time.elapsed();
             } else {
