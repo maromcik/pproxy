@@ -160,6 +160,7 @@ impl Service for MonitorService {
                 debug!("check failed: upstream suspended");
             } else {
                 self.state.suspended.store(false, Ordering::Release);
+                self.state.wake_up.store(false, Ordering::Release);
                 debug!("check succeeded: upstream active");
             }
 
@@ -169,7 +170,6 @@ impl Service for MonitorService {
                     let _ = call_script(&self.state.commands.wake).await;
                     let mut timer = self.state.timer.write().await;
                     *timer = Instant::now();
-                    self.state.wake_up.store(false, Ordering::Release);
                     info!("upstream woke up: timer reset");
                 }
                 self.state.time_monitoring.write().await.suspended_time += wall_time.elapsed();
