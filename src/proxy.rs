@@ -98,9 +98,9 @@ impl ProxyHttp for SuspendProxy {
                         .unwrap_or_default(),
                 );
                 self.state.wake_up.store(true, Ordering::Release);
-                "The server is starting, please refresh this page"
+                "The server is starting, please refresh this page."
             }
-            (false, true) => "Auto suspend/wake up is disabled, please contact an administrator.",
+            (false, true) => "Auto suspend/wake up is disabled, please contact the administrator.",
             _ => {
                 let mut timer = self.state.timer.write().await;
                 *timer = Instant::now();
