@@ -189,6 +189,7 @@ impl Service for MonitorService {
                     match call_script(&self.state.commands.suspend).await {
                         Ok(_) => {
                             self.state.suspended.store(true, Ordering::Release);
+                            self.state.wake_up.store(false, Ordering::Release);
                             info!("timeout reached: upstream suspended");
                         }
                         Err(e) => {
