@@ -31,17 +31,19 @@ struct Cli {
     #[clap(short, long, value_name = "ENV_FILE")]
     env_file: Option<String>,
 
-    /// Server host to proxy to, e.g. example.com or 192.168.0.10.
+    /// Jellyfin host to proxy to, e.g. example.com or 192.168.0.10.
     #[clap(short = 'j', long, value_name = "JELLYFIN_HOST", env = "JELLYFIN_HOST")]
     jellyfin_host: String,
 
-    /// Server host to proxy to, e.g. example.com or 192.168.0.10.
+    /// Immich host to proxy to, e.g. example.com or 192.168.0.10.
     #[clap(short = 'i', long, value_name = "IMMICH_HOST", env = "IMMICH_HOST")]
     immich_host: String,
 
+    /// Host to listen on for HTTP requests.
     #[clap(short = 'l', long, value_name = "LISTEN_HOST", env = "LISTEN_HOST")]
     listen_host: String,
 
+    /// Host to listen on for the control endpoint.
     #[clap(
         short = 'm',
         long,
@@ -50,6 +52,7 @@ struct Cli {
     )]
     listen_control_host: String,
 
+    /// Command to execute when suspending the server.
     #[clap(
         short = 's',
         long,
@@ -58,9 +61,11 @@ struct Cli {
     )]
     suspend_command: String,
 
+    /// Command to execute when checking if the server is suspended.
     #[clap(short = 'c', long, value_name = "CHECK_COMMAND", env = "CHECK_COMMAND")]
     check_command: String,
 
+    /// Command to execute when waking up the server.
     #[clap(short = 'w', long, value_name = "WAKE_COMMAND", env = "WAKE_COMMAND")]
     wake_command: String,
 
@@ -72,6 +77,16 @@ struct Cli {
     )]
     status_command: Option<String>,
 
+    /// User agents that will never wake up the server.
+    #[clap(
+        short = 'u',
+        long,
+        value_name = "USER_AGENT_BLOCKLIST",
+        env = "USER_AGENT_BLOCKLIST"
+    )]
+    user_agent_blocklist: Option<String>,
+
+    /// Timeout in seconds for suspending the server.
     #[clap(
         short = 't',
         long,
@@ -191,6 +206,12 @@ fn main() {
         },
     );
 
+    let user_agent_blocklist = cli.user_agent_blocklist
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect::<HashSet<String>>();
+
     let mut proxy_service = http_proxy_service(
         &server.configuration,
         SuspendProxy {
@@ -199,6 +220,7 @@ fn main() {
                 immich: cli.immich_host,
             },
             state,
+            user_agent_blocklist
         },
     );
 

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use crate::templates::PublicPageTemplate;
 use crate::{ServerState, Upstreams};
 use askama::Template;
@@ -15,6 +16,7 @@ use tracing::debug;
 pub struct SuspendProxy {
     pub upstreams: Upstreams,
     pub state: Arc<ServerState>,
+    pub user_agent_blocklist: HashSet<String>
 }
 
 #[async_trait]
@@ -69,6 +71,17 @@ impl ProxyHttp for SuspendProxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
+        let user_agent = session
+            .req_header()
+            .headers
+            .get("User-Agent")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or_default();
+
+        if self.user_agent_blocklist.contains(user_agent) {
+            return Ok(true);
+        }
+
         let message = match (
             self.state.auto_suspend_enabled.load(Ordering::Acquire),
             self.state.suspended.load(Ordering::Acquire),
@@ -90,12 +103,7 @@ impl ProxyHttp for SuspendProxy {
                         .and_then(|h| h.to_str().ok())
                         .unwrap_or_default(),
                     session.req_header().uri.path(),
-                    session
-                        .req_header()
-                        .headers
-                        .get("User-Agent")
-                        .and_then(|h| h.to_str().ok())
-                        .unwrap_or_default(),
+                    user_agent
                 );
                 info!("{msg}");
                 self.state.logs.lock().await.insert(msg);
