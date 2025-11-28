@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use crate::templates::PublicPageTemplate;
 use crate::{ServerState, Upstreams};
 use askama::Template;
@@ -7,16 +6,18 @@ use log::info;
 use pingora::http::ResponseHeader;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use pingora::{Error, HTTPStatus};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use time::OffsetDateTime;
 use tokio::time::Instant;
 use tracing::debug;
 
 pub struct SuspendProxy {
     pub upstreams: Upstreams,
     pub state: Arc<ServerState>,
-    pub user_agent_blocklist: HashSet<String>
+    pub user_agent_blocklist: HashSet<String>,
 }
 
 #[async_trait]
@@ -87,14 +88,15 @@ impl ProxyHttp for SuspendProxy {
             self.state.suspended.load(Ordering::Acquire),
         ) {
             (true, true) => {
+                let client = session
+                    .req_header()
+                    .headers
+                    .get("X-Forwarded-For")
+                    .and_then(|h| h.to_str().ok())
+                    .unwrap_or_default();
                 let msg = format!(
                     "traffic detected: {:?} -- {:?} {:?} {:?}; User-Agent: {:?}",
-                    session
-                        .req_header()
-                        .headers
-                        .get("X-Forwarded-For")
-                        .and_then(|h| h.to_str().ok())
-                        .unwrap_or_default(),
+                    client,
                     session.req_header().method.as_str(),
                     session
                         .req_header()
@@ -106,7 +108,13 @@ impl ProxyHttp for SuspendProxy {
                     user_agent
                 );
                 info!("{msg}");
-                self.state.logs.lock().await.insert(msg);
+                self.state.logs.lock().await.insert(
+                    client.into(),
+                    (
+                        OffsetDateTime::now_local().unwrap_or(OffsetDateTime::now_utc()),
+                        msg,
+                    ),
+                );
                 self.state.wake_up.store(true, Ordering::Release);
                 "The server is starting, the page will be refreshing automatically until you are redirected to immich/jellyfin. If not, try refreshing the page manually after about 10 seconds."
             }

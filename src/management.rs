@@ -3,6 +3,7 @@ use crate::templates::ControlPageTemplate;
 use crate::utils::call_script;
 use askama::Template;
 use async_trait::async_trait;
+use itertools::Itertools;
 use log::{debug, info, warn};
 use pingora::http::ResponseHeader;
 use pingora::prelude::*;
@@ -91,7 +92,17 @@ impl ProxyHttp for ControlService {
             None
         };
         let time_monitoring = self.state.time_monitoring.read().await;
-        let logs = self.state.logs.lock().await.clone();
+        let logs = self
+            .state
+            .logs
+            .lock()
+            .await
+            .clone()
+            .into_iter()
+            .sorted_by_key(|(_, (d, _))| *d)
+            .map(|(k, (d, l))| (k, (d.to_string(), l)))
+            .collect_vec();
+
         let tmpl = ControlPageTemplate {
             message,
             enabled: self.state.auto_suspend_enabled.load(Ordering::Relaxed),

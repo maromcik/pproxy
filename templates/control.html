@@ -92,8 +92,8 @@
 
     <div id="log-box" class="p-4 rounded-lg shadow bg-white border border-gray-200 overflow-auto">
     <h3>Logs</h3>
-        {% for log in logs %}
-            <div class="rounded-lg"><pre><code>{{- log -}}</code></pre></div>
+        {% for (client, (date, log)) in logs %}
+            <div class="rounded-lg"><pre><code>{{ date }}: {{ client }} -- {{ log }}</code></pre></div>
         {% endfor %}
     </div>
 </div>

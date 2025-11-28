@@ -15,7 +15,9 @@ pub async fn call_script(script: &str) -> Result<String, AppError> {
                     "script {} exited with non-zero status: {}",
                     script, o.status
                 );
-                return Err(AppError::CommandError(format!("script: {script} failed; {err}")));
+                return Err(AppError::CommandError(format!(
+                    "script: {script} failed; {err}"
+                )));
             }
             trace!("script: {} STDOUT: {}", script, out);
             trace!("script: {} STDERR: {}", script, err);

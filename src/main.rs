@@ -4,14 +4,15 @@ mod proxy;
 mod templates;
 mod utils;
 
-use std::collections::{BTreeSet, HashSet};
 use crate::management::{ControlService, MonitorService};
 use crate::proxy::SuspendProxy;
 use clap::Parser;
 use pingora::prelude::*;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
+use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
 use tracing::{error, info};
@@ -141,7 +142,7 @@ pub struct ServerState {
     pub auto_suspend_enabled: AtomicBool,
     pub commands: Commands,
     pub time_monitoring: RwLock<TimeMonitoring>,
-    pub logs: Mutex<BTreeSet<String>>,
+    pub logs: Mutex<HashMap<String, (OffsetDateTime, String)>>,
 }
 
 fn main() {
@@ -189,7 +190,7 @@ fn main() {
             active_time: Duration::from_secs(0),
             suspended_time: Duration::from_secs(0),
         }),
-        logs: Mutex::new(BTreeSet::new()),
+        logs: Mutex::new(HashMap::new()),
     });
 
     info!("Bootstrap done");
@@ -206,7 +207,8 @@ fn main() {
         },
     );
 
-    let user_agent_blocklist = cli.user_agent_blocklist
+    let user_agent_blocklist = cli
+        .user_agent_blocklist
         .unwrap_or_default()
         .split(',')
         .map(|s| s.trim().to_string())
@@ -220,7 +222,7 @@ fn main() {
                 immich: cli.immich_host,
             },
             state,
-            user_agent_blocklist
+            user_agent_blocklist,
         },
     );
 
