@@ -1,6 +1,6 @@
-use std::collections::HashSet;
 use askama::Template;
 use serde::Serialize;
+use std::collections::BTreeSet;
 
 #[derive(Template, Serialize)]
 #[template(path = "control.html")]
@@ -14,7 +14,7 @@ pub struct ControlPageTemplate {
     pub elapsed: String,
     pub active_time: String,
     pub suspended_time: String,
-    pub logs: HashSet<String>,
+    pub logs: BTreeSet<String>,
 }
 
 #[derive(Template, Serialize)]

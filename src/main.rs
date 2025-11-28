@@ -4,7 +4,7 @@ mod proxy;
 mod templates;
 mod utils;
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use crate::management::{ControlService, MonitorService};
 use crate::proxy::SuspendProxy;
 use clap::Parser;
@@ -141,7 +141,7 @@ pub struct ServerState {
     pub auto_suspend_enabled: AtomicBool,
     pub commands: Commands,
     pub time_monitoring: RwLock<TimeMonitoring>,
-    pub logs: Mutex<HashSet<String>>,
+    pub logs: Mutex<BTreeSet<String>>,
 }
 
 fn main() {
@@ -189,7 +189,7 @@ fn main() {
             active_time: Duration::from_secs(0),
             suspended_time: Duration::from_secs(0),
         }),
-        logs: Mutex::new(HashSet::new()),
+        logs: Mutex::new(BTreeSet::new()),
     });
 
     info!("Bootstrap done");
