@@ -19,7 +19,7 @@
 
 <body class="bg-gray-100 text-gray-900 p-4">
 
-<div id="content-area" class="max-w-xl mx-auto space-y-6">
+<div id="content-area" class="2xl:w-1/2 lg:w-3/4 w-full mx-auto space-y-6">
 
     <!-- Status Fields -->
     <div class="bg-white p-4 shadow rounded-lg border border-gray-200 space-y-2">
@@ -40,6 +40,7 @@
         <button
                 hx-get="/resume"
                 hx-target="#content-area"
+                hx-swap="outerHTML"
                 class="w-full py-3 rounded-lg text-white bg-blue-600 hover:bg-blue-700">
             <i class="fa fa-play"></i> Resume
         </button>
@@ -48,6 +49,7 @@
         <button
                 hx-get="/suspend"
                 hx-target="#content-area"
+                hx-swap="outerHTML"
                 class="w-full py-3 rounded-lg text-black bg-yellow-400 hover:bg-yellow-500">
             <i class="fa fa-pause"></i> Suspend
         </button>
@@ -56,6 +58,7 @@
         <button
                 hx-get="/enable"
                 hx-target="#content-area"
+                hx-swap="outerHTML"
                 class="w-full py-3 rounded-lg text-white bg-green-600 hover:bg-green-700">
             <i class="fa fa-check"></i> Enable
         </button>
@@ -64,6 +67,7 @@
         <button
                 hx-get="/disable"
                 hx-target="#content-area"
+                hx-swap="outerHTML"
                 class="w-full py-3 rounded-lg text-white bg-red-600 hover:bg-red-700">
             <i class="fa fa-ban"></i> Disable
         </button>
@@ -72,6 +76,7 @@
         <button
                 hx-get="/status"
                 hx-target="#content-area"
+                hx-swap="outerHTML"
                 class="w-full py-3 rounded-lg text-white bg-gray-600 hover:bg-gray-700 sm:col-span-2">
             <i class="fa fa-info-circle"></i> Status
         </button>
@@ -80,10 +85,17 @@
 
     {% if let Some(m) = message %}
     <!-- Message Box -->
-    <div id="message-box" class="p-4 rounded-lg shadow bg-white border border-gray-200 overflow-auto max-w-full">
+    <div id="message-box" class="p-4 rounded-lg shadow bg-white border border-gray-200 overflow-auto">
         <pre class="whitespace-pre-wrap break-words"><code>{{ m }}</code></pre>
     </div>
     {% endif %}
+
+    <div id="log-box" class="p-4 rounded-lg shadow bg-white border border-gray-200 overflow-auto">
+    <h3>Logs</h3>
+        {% for log in logs %}
+            <div class="rounded-lg"><pre><code>{{- log -}}</code></pre></div>
+        {% endfor %}
+    </div>
 </div>
 
 </body>

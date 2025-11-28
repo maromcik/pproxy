@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use askama::Template;
 use serde::Serialize;
 
@@ -12,7 +13,8 @@ pub struct ControlPageTemplate {
     pub limit: String,
     pub elapsed: String,
     pub active_time: String,
-    pub suspended_time: String
+    pub suspended_time: String,
+    pub logs: HashSet<String>,
 }
 
 #[derive(Template, Serialize)]

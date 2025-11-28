@@ -91,6 +91,7 @@ impl ProxyHttp for ControlService {
             None
         };
         let time_monitoring = self.state.time_monitoring.read().await;
+        let logs = self.state.logs.lock().await.clone();
         let tmpl = ControlPageTemplate {
             message,
             enabled: self.state.auto_suspend_enabled.load(Ordering::Relaxed),
@@ -107,6 +108,7 @@ impl ProxyHttp for ControlService {
                 "{:.2?} m",
                 time_monitoring.suspended_time.as_secs() as f64 / 60_f64
             ),
+            logs,
         };
 
         let Ok(body) = tmpl.render() else {

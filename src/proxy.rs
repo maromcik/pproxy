@@ -74,7 +74,7 @@ impl ProxyHttp for SuspendProxy {
             self.state.suspended.load(Ordering::Acquire),
         ) {
             (true, true) => {
-                info!(
+                let msg = format!(
                     "traffic detected: {:?} -- {:?} {:?} {:?}; User-Agent: {:?}",
                     session
                         .req_header()
@@ -97,6 +97,8 @@ impl ProxyHttp for SuspendProxy {
                         .and_then(|h| h.to_str().ok())
                         .unwrap_or_default(),
                 );
+                info!("{msg}");
+                self.state.logs.lock().await.insert(msg);
                 self.state.wake_up.store(true, Ordering::Release);
                 "The server is starting, the page will be refreshing automatically until you are redirected to immich/jellyfin. If not, try refreshing the page manually after about 10 seconds."
             }

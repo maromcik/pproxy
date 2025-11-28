@@ -4,6 +4,7 @@ mod proxy;
 mod templates;
 mod utils;
 
+use std::collections::HashSet;
 use crate::management::{ControlService, MonitorService};
 use crate::proxy::SuspendProxy;
 use clap::Parser;
@@ -11,7 +12,7 @@ use pingora::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -125,6 +126,7 @@ pub struct ServerState {
     pub auto_suspend_enabled: AtomicBool,
     pub commands: Commands,
     pub time_monitoring: RwLock<TimeMonitoring>,
+    pub logs: Mutex<HashSet<String>>,
 }
 
 fn main() {
@@ -172,6 +174,7 @@ fn main() {
             active_time: Duration::from_secs(0),
             suspended_time: Duration::from_secs(0),
         }),
+        logs: Mutex::new(HashSet::new()),
     });
 
     info!("Bootstrap done");
