@@ -79,7 +79,9 @@ impl ProxyHttp for SuspendProxy {
             .and_then(|h| h.to_str().ok())
             .unwrap_or_default();
 
-        if self.user_agent_blocklist.contains(user_agent) {
+        if self.user_agent_blocklist
+            .iter()
+            .any(|ua| user_agent.contains(ua)) {
             return Ok(true);
         }
 
