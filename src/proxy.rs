@@ -79,9 +79,11 @@ impl ProxyHttp for SuspendProxy {
             .and_then(|h| h.to_str().ok())
             .unwrap_or_default();
 
-        if self.user_agent_blocklist
-            .iter()
-            .any(|ua| user_agent.contains(ua)) {
+        if self.user_agent_blocklist.iter().any(|ua| {
+            user_agent
+                .to_lowercase()
+                .contains(ua.to_lowercase().as_str())
+        }) {
             return Ok(true);
         }
 
