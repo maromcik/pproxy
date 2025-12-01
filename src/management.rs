@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::time::Instant;
+use tracing::trace;
 
 pub struct ControlService {
     pub state: Arc<ServerState>,
@@ -160,15 +161,15 @@ impl Service for MonitorService {
             if call_script(&self.state.commands.check).await.is_err() {
                 self.state.suspended.store(true, Ordering::Release);
                 self.state.suspending.store(false, Ordering::Release);
-                debug!("check failed: upstream suspended");
+                trace!("check failed: upstream suspended");
             } else {
                 self.state.suspended.store(false, Ordering::Release);
                 self.state.wake_up.store(false, Ordering::Release);
-                debug!("check succeeded: upstream active");
+                trace!("check succeeded: upstream active");
             }
 
             if !self.state.auto_suspend_enabled.load(Ordering::Acquire) {
-                debug!("auto-suspend disabled: skipping monitoring");
+                trace!("auto-suspend disabled: skipping monitoring");
                 continue;
             }
 
@@ -205,7 +206,7 @@ impl Service for MonitorService {
                     //     );
                     //     let _ = call_script(&self.state.commands.wake).await;
                     // }
-                    debug!("upstream active: no need to suspend");
+                    trace!("upstream active: no need to suspend");
                 }
                 self.state.time_monitoring.write().await.active_time += wall_time.elapsed();
             }
