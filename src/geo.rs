@@ -64,9 +64,10 @@ impl<'de> Deserialize<'de> for CountryCode {
 pub struct GeoData {
     pub ip: IpAddr,
     pub country_name: String,
-    pub ip_version: String,
+    // pub ip_version: String,
     pub country_code2: CountryCode,
-    pub isp: String,
+    // pub ip_number: String,
+    // pub isp: String,
     pub response_message: String,
     pub response_code: u16,
 }
