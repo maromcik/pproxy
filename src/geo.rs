@@ -21,10 +21,10 @@ impl CountryCode {
 
 impl From<&str> for CountryCode {
     fn from(s: &str) -> Self {
-        match s {
-            "SK" => Self::Sk,
-            "CZ" => Self::Cz,
-            "GB" => Self::Gb,
+        match s.to_lowercase().as_str() {
+            "sk" => Self::Sk,
+            "cz" => Self::Cz,
+            "gb" => Self::Gb,
             _ => Self::Other,
         }
     }
@@ -33,10 +33,10 @@ impl From<&str> for CountryCode {
 impl Display for CountryCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CountryCode::Sk => write!(f, "SK"),
-            CountryCode::Cz => write!(f, "CZ"),
-            CountryCode::Gb => write!(f, "GB"),
-            CountryCode::Other => write!(f, "Other"),
+            CountryCode::Sk => write!(f, "sk"),
+            CountryCode::Cz => write!(f, "cz"),
+            CountryCode::Gb => write!(f, "gb"),
+            CountryCode::Other => write!(f, "other"),
         }
     }
 }
