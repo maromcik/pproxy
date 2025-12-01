@@ -4,7 +4,7 @@ use crate::utils::call_script;
 use askama::Template;
 use async_trait::async_trait;
 use itertools::Itertools;
-use log::{debug, info, warn};
+use log::{info, warn};
 use pingora::http::ResponseHeader;
 use pingora::prelude::*;
 use pingora::server::{ListenFds, ShutdownWatch};
