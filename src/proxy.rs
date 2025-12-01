@@ -49,7 +49,7 @@ impl SuspendProxy {
 
         if let Some(code) = self.geo_fence.read().await.get(&ip) {
             debug!("geolocation cache hit: {:?}", code);
-            return Ok(code.is_allowed());
+            return Ok(code.is_blocked());
         }
 
         let data = reqwest::get(format!("https://api.iplocation.net?ip={}", ip))
@@ -61,7 +61,7 @@ impl SuspendProxy {
         info!("geolocation request data: {:?}", data);
         let mut fence = self.geo_fence.write().await;
         let country = fence.entry(ip).or_insert(data.country_code2);
-        Ok(country.is_allowed())
+        Ok(country.is_blocked())
     }
 }
 

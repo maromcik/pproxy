@@ -11,10 +11,10 @@ pub enum CountryCode {
 }
 
 impl CountryCode {
-    pub fn is_allowed(&self) -> bool {
+    pub fn is_blocked(&self) -> bool {
         match self {
-            CountryCode::Sk | CountryCode::Cz | CountryCode::Gb => true,
-            CountryCode::Other => false,
+            CountryCode::Sk | CountryCode::Cz | CountryCode::Gb => false,
+            CountryCode::Other => true,
         }
     }
 }
