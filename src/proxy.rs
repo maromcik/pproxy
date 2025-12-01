@@ -55,12 +55,12 @@ impl SuspendProxy {
         let data = reqwest::get(format!("https://api.iplocation.net?ip={}", ip))
             .await?
             .json::<GeoData>()
-            .await;
+            .await?;
 
         info!("geolocation request data: {:?}", data);
-        // let mut fence = self.geo_fence.write().await;
-        // let country = fence.entry(ip).or_insert(data.country_code2);
-        Ok(false)
+        let mut fence = self.geo_fence.write().await;
+        let country = fence.entry(ip).or_insert(data.country_code2);
+        Ok(country.is_allowed())
     }
 }
 
