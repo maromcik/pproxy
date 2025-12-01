@@ -29,6 +29,18 @@ pub struct SuspendProxy {
 impl SuspendProxy {
     pub async fn is_blocked_ip_geolocation(&self, ip: &str) -> Result<bool, AppError> {
         let ip = ip.parse::<IpAddr>()?;
+        match ip {
+            IpAddr::V4(ipv4) => {
+                if ipv4.is_private() {
+                    return Ok(false);
+                }
+            }
+            IpAddr::V6(ipv6) => {
+                if ipv6.is_unique_local() {
+                    return Ok(false);
+                }
+            }
+        }
         if self.geo_fence_allowlist.contains(&ip) {
             debug!("geolocation allowlist hit: {:?}", ip);
             return Ok(true);
@@ -128,7 +140,10 @@ impl ProxyHttp for SuspendProxy {
                 warn!("blocked IP: {client}, Host: {host}, User-Agent: {user_agent}");
                 return Ok(true);
             }
-            Err(e) => error!("{e}"),
+            Err(e) => {
+                error!("{e}");
+                return Ok(true);
+            },
             _ => {}
         }
 
