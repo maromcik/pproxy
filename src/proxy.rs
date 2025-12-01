@@ -55,7 +55,8 @@ impl SuspendProxy {
         let data = reqwest::get(format!("https://api.iplocation.net?ip={}", ip))
             .await?
             .json::<GeoData>()
-            .await?;
+            .await
+            .map_err(|e| AppError::ParseError(format!("{e}")))?;
 
         info!("geolocation request data: {:?}", data);
         let mut fence = self.geo_fence.write().await;
