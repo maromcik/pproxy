@@ -1,3 +1,5 @@
+use crate::error::AppError;
+use crate::geo::{CountryCode, GeoData};
 use crate::templates::PublicPageTemplate;
 use crate::{ServerState, Upstreams};
 use askama::Template;
@@ -6,18 +8,46 @@ use log::info;
 use pingora::http::ResponseHeader;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use pingora::{Error, HTTPStatus};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use time::OffsetDateTime;
+use tokio::sync::RwLock;
 use tokio::time::Instant;
-use tracing::debug;
+use tracing::{debug, error, warn};
 
 pub struct SuspendProxy {
     pub upstreams: Upstreams,
     pub state: Arc<ServerState>,
     pub user_agent_blocklist: HashSet<String>,
+    pub geo_fence_allowlist: HashSet<IpAddr>,
+    pub geo_fence: RwLock<HashMap<IpAddr, CountryCode>>,
+}
+
+impl SuspendProxy {
+    pub async fn is_blocked_ip_geolocation(&self, ip: &str) -> Result<bool, AppError> {
+        let ip = ip.parse::<IpAddr>()?;
+        if self.geo_fence_allowlist.contains(&ip) {
+            debug!("geolocation allowlist hit: {:?}", ip);
+            return Ok(true);
+        }
+
+        if let Some(code) = self.geo_fence.read().await.get(&ip) {
+            debug!("geolocation cache hit: {:?}", code);
+            return Ok(code.is_allowed());
+        }
+
+        let data = reqwest::get(format!("https://api.iplocation.net/?ip={}", ip))
+            .await?
+            .json::<GeoData>()
+            .await?;
+        info!("geolocation request data: {:?}", data);
+        let mut fence = self.geo_fence.write().await;
+        let country = fence.entry(ip).or_insert(data.country_code2);
+        Ok(country.is_allowed())
+    }
 }
 
 #[async_trait]
@@ -79,6 +109,29 @@ impl ProxyHttp for SuspendProxy {
             .and_then(|h| h.to_str().ok())
             .unwrap_or_default();
 
+        let client = session
+            .req_header()
+            .headers
+            .get("X-Forwarded-For")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or_default();
+
+        let host = session
+            .req_header()
+            .headers
+            .get("Host")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or_default();
+
+        match self.is_blocked_ip_geolocation(client).await {
+            Ok(blocked) if blocked => {
+                warn!("blocked IP: {client}, Host: {host}, User-Agent: {user_agent}");
+                return Ok(true);
+            }
+            Err(e) => error!("{e}"),
+            _ => {}
+        }
+
         if self.user_agent_blocklist.iter().any(|ua| {
             user_agent
                 .to_lowercase()
@@ -92,22 +145,11 @@ impl ProxyHttp for SuspendProxy {
             self.state.suspended.load(Ordering::Acquire),
         ) {
             (true, true) => {
-                let client = session
-                    .req_header()
-                    .headers
-                    .get("X-Forwarded-For")
-                    .and_then(|h| h.to_str().ok())
-                    .unwrap_or_default();
                 let msg = format!(
                     "traffic detected: {:?} -- {:?} {:?} {:?}; User-Agent: {:?}",
                     client,
                     session.req_header().method.as_str(),
-                    session
-                        .req_header()
-                        .headers
-                        .get("Host")
-                        .and_then(|h| h.to_str().ok())
-                        .unwrap_or_default(),
+                    host,
                     session.req_header().uri.path(),
                     user_agent
                 );

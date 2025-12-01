@@ -1,4 +1,5 @@
 mod error;
+mod geo;
 mod management;
 mod proxy;
 mod templates;
@@ -9,6 +10,7 @@ use crate::proxy::SuspendProxy;
 use clap::Parser;
 use pingora::prelude::*;
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
@@ -86,6 +88,10 @@ struct Cli {
         env = "USER_AGENT_BLOCKLIST"
     )]
     user_agent_blocklist: Option<String>,
+
+    /// IP that will never be blocked by geofencing.
+    #[clap(long, value_name = "GEO_FENCE_ALLOWLIST", env = "GEO_FENCE_ALLOWLIST")]
+    geo_fence_allowlist: Option<String>,
 
     /// Timeout in seconds for suspending the server.
     #[clap(
@@ -214,6 +220,13 @@ fn main() {
         .map(|s| s.trim().to_string())
         .collect::<HashSet<String>>();
 
+    let geo_fence_allowlist = cli
+        .geo_fence_allowlist
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|s| s.trim().to_string().parse::<IpAddr>().ok())
+        .collect::<HashSet<IpAddr>>();
+
     let mut proxy_service = http_proxy_service(
         &server.configuration,
         SuspendProxy {
@@ -223,6 +236,8 @@ fn main() {
             },
             state,
             user_agent_blocklist,
+            geo_fence_allowlist,
+            geo_fence: RwLock::new(HashMap::new()),
         },
     );
 
