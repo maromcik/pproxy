@@ -41,6 +41,7 @@ impl SuspendProxy {
                 }
             }
         }
+        debug!("geolocating IP: {:?}", ip);
         if self.geo_fence_allowlist.contains(&ip) {
             debug!("geolocation allowlist hit: {:?}", ip);
             return Ok(true);
@@ -51,7 +52,7 @@ impl SuspendProxy {
             return Ok(code.is_allowed());
         }
 
-        let data = reqwest::get(format!("https://api.iplocation.net/?ip={}", ip))
+        let data = reqwest::get(format!("https://api.iplocation.net?ip={}", ip))
             .await?
             .json::<GeoData>()
             .await?;
