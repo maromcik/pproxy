@@ -138,6 +138,15 @@ impl ProxyHttp for SuspendProxy {
             .and_then(|h| h.to_str().ok())
             .unwrap_or_default();
 
+        if self.user_agent_blocklist.iter().any(|ua| {
+            user_agent
+                .to_lowercase()
+                .contains(ua.to_lowercase().as_str())
+        }) {
+            warn!("blocked user-agent: {client}, Host: {host}, User-Agent: {user_agent}");
+            return Ok(true);
+        }
+
         match self.is_blocked_ip_geolocation(client).await {
             Ok(blocked) if blocked => {
                 warn!("blocked IP: {client}, Host: {host}, User-Agent: {user_agent}");
@@ -148,14 +157,6 @@ impl ProxyHttp for SuspendProxy {
                 return Ok(true);
             },
             _ => {}
-        }
-
-        if self.user_agent_blocklist.iter().any(|ua| {
-            user_agent
-                .to_lowercase()
-                .contains(ua.to_lowercase().as_str())
-        }) {
-            return Ok(true);
         }
 
         let message = match (
