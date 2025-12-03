@@ -238,6 +238,7 @@ fn main() {
             user_agent_blocklist,
             geo_fence_allowlist,
             geo_fence: RwLock::new(HashMap::new()),
+            geo_api_lock: Mutex::new(()),
         },
     );
 

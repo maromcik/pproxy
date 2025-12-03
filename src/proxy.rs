@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
 use tracing::{debug, error, warn};
 
@@ -24,6 +24,7 @@ pub struct SuspendProxy {
     pub user_agent_blocklist: HashSet<String>,
     pub geo_fence_allowlist: HashSet<IpAddr>,
     pub geo_fence: RwLock<HashMap<IpAddr, CountryCode>>,
+    pub geo_api_lock: Mutex<()>
 }
 
 impl SuspendProxy {
@@ -51,17 +52,19 @@ impl SuspendProxy {
             debug!("geolocation cache hit: {:?}", code);
             return Ok(code.is_blocked());
         }
+        {
+            let _lock = self.geo_api_lock.lock().await;
+            let data = reqwest::get(format!("https://api.iplocation.net?ip={}", ip))
+                .await?
+                .json::<GeoData>()
+                .await
+                .map_err(|e| AppError::ParseError(format!("{e}")))?;
 
-        let data = reqwest::get(format!("https://api.iplocation.net?ip={}", ip))
-            .await?
-            .json::<GeoData>()
-            .await
-            .map_err(|e| AppError::ParseError(format!("{e}")))?;
-
-        info!("geolocation request data: {:?}", data);
-        let mut fence = self.geo_fence.write().await;
-        let country = fence.entry(ip).or_insert(data.country_code2);
-        Ok(country.is_blocked())
+            let mut fence = self.geo_fence.write().await;
+            let country = fence.entry(ip).or_insert(data.country_code2);
+            info!("geolocation request data: {:?}", data);
+            Ok(country.is_blocked())
+        }
     }
 }
 
@@ -87,8 +90,8 @@ impl ProxyHttp for SuspendProxy {
         debug!("upstream: {:?}", host);
         let mut peer = if host
             .to_str()
-            .map_err(|e| pingora::Error::explain(HTTPStatus(400), format!("{e}")))?
-            .starts_with("jellyfin.")
+            .map_err(|e| Error::explain(HTTPStatus(400), format!("{e}")))?
+            .eq("jellyfin.hafka.eu")
         {
             Box::new(HttpPeer::new(
                 &self.upstreams.jellyfin,
@@ -97,8 +100,8 @@ impl ProxyHttp for SuspendProxy {
             ))
         } else if host
             .to_str()
-            .map_err(|e| pingora::Error::explain(HTTPStatus(400), format!("{e}")))?
-            .starts_with("immich.")
+            .map_err(|e| Error::explain(HTTPStatus(400), format!("{e}")))?
+            .eq("immich.hafka.eu")
         {
             Box::new(HttpPeer::new(&self.upstreams.immich, false, "".to_string()))
         } else {

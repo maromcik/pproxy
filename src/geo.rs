@@ -66,8 +66,8 @@ pub struct GeoData {
     pub country_name: String,
     // pub ip_version: String,
     pub country_code2: CountryCode,
-    // pub ip_number: String,
-    // pub isp: String,
+    // pub ip_number: u16,
+    pub isp: String,
     pub response_message: String,
-    // pub response_code: u16,
+    pub response_code: String,
 }
