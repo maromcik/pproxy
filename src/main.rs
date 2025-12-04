@@ -4,6 +4,7 @@ mod management;
 mod proxy;
 mod templates;
 mod utils;
+pub mod blocklist;
 
 use crate::management::{ControlService, MonitorService};
 use crate::proxy::SuspendProxy;

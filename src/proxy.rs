@@ -13,10 +13,13 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use ipnetwork::IpNetwork;
+use reqwest::Client;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
 use tracing::{debug, error, warn};
+use crate::blocklist::BlocklistIp;
 
 pub struct SuspendProxy {
     pub upstreams: Upstreams,
@@ -28,6 +31,25 @@ pub struct SuspendProxy {
 }
 
 impl SuspendProxy {
+    pub async fn block_ip(&self, ip: &str) -> Result<(), AppError> {
+        let ip = ip.parse::<IpAddr>()?;
+        let client = Client::new();
+
+        let body = BlocklistIp { ip: IpNetwork::from(ip) };
+
+        let resp = client
+            .post("http://192.168.0.10:6060/blocklist")
+            .json(&body) // <-- same as: -H "Content-Type: application/json" -d '{"ip": "..."}'
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            warn!("error adding IP to blocklist");
+        }
+
+        Ok(())
+    }
+
     pub async fn is_blocked_ip_geolocation(&self, ip: &str) -> Result<bool, AppError> {
         let ip = ip.parse::<IpAddr>()?;
         match ip {
@@ -146,12 +168,18 @@ impl ProxyHttp for SuspendProxy {
                 .to_lowercase()
                 .contains(ua.to_lowercase().as_str())
         }) {
+            if let Err(e) = self.block_ip(client).await {
+                error!("error adding IP: {client} to the blocklist: {e}");
+            }
             warn!("blocked user-agent: {client}, Host: {host}, User-Agent: {user_agent}");
             return Ok(true);
         }
 
         match self.is_blocked_ip_geolocation(client).await {
             Ok(blocked) if blocked => {
+                if let Err(e) = self.block_ip(client).await {
+                    error!("error adding IP: {client} to the blocklist: {e}");
+                }
                 warn!("blocked IP: {client}, Host: {host}, User-Agent: {user_agent}");
                 return Ok(true);
             }
