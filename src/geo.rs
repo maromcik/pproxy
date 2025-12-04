@@ -13,8 +13,8 @@ pub enum CountryCode {
 impl CountryCode {
     pub fn is_blocked(&self) -> bool {
         match self {
-            CountryCode::Sk | CountryCode::Cz | CountryCode::Gb => false,
-            CountryCode::Other => true,
+            CountryCode::Cz | CountryCode::Gb => false,
+            CountryCode::Sk | CountryCode::Other => true,
         }
     }
 }
