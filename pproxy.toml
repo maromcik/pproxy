@@ -1,0 +1,26 @@
+listen_host = "0.0.0.0:8050"
+listen_control_host = "0.0.0.0:5050"
+suspend_timeout = 300
+app_log_level = "info"
+all_log_level = "info"
+
+
+[commands]
+check_command = "ping -W 0.3 -c 1 192.168.0.10"
+wake_command = "ether-wake -i ens1 21:11:21:11:21:11"
+suspend_command = "ssh -o ConnectTimeout=1 root@192.168.0.10 systemctl suspend"
+status_command = "ssh -o ConnectTimeout=1 root@192.168.0.10 sh -c /root/sus-save.sh"
+
+[servers]
+
+    [s1.example.com]
+        upstream = "192.168.1.10"
+        suspending = true
+        user_agent_blocklist = []
+        geo_fence_allowlist = []
+
+    [s2.example.com]
+        upstream = "192.168.1.11"
+        suspending = false
+        user_agent_blocklist = []
+        geo_fence_allowlist = []

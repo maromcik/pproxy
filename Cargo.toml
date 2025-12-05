@@ -19,3 +19,4 @@ time = "0.3.44"
 itertools = "0.14.0"
 reqwest = { version = "0.12.24", features = ["json"] }
 ipnetwork = {version = "0.21.1", features = ["default", "serde"]}
+config = "0.15.19"

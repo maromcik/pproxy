@@ -1,57 +1,147 @@
+use crate::ServerState;
+use crate::blocklist::BlocklistIp;
+use crate::config::{ServerConfig, Servers};
 use crate::error::AppError;
 use crate::geo::{CountryCode, GeoData};
 use crate::templates::PublicPageTemplate;
-use crate::{ServerState, Upstreams};
 use askama::Template;
 use async_trait::async_trait;
+use ipnetwork::IpNetwork;
 use log::info;
 use pingora::http::ResponseHeader;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use pingora::{Error, HTTPStatus};
-use std::collections::{HashMap, HashSet};
+use reqwest::{Client, Response};
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use ipnetwork::IpNetwork;
-use reqwest::Client;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
-use tracing::{debug, error, warn};
-use crate::blocklist::BlocklistIp;
+use tracing::{debug, error, trace, warn};
 
-pub struct SuspendProxy {
-    pub upstreams: Upstreams,
+pub struct PingoraProxy {
     pub state: Arc<ServerState>,
-    pub user_agent_blocklist: HashSet<String>,
-    pub geo_fence_allowlist: HashSet<IpAddr>,
+    pub servers: Servers,
     pub geo_fence: RwLock<HashMap<IpAddr, CountryCode>>,
-    pub geo_api_lock: Mutex<()>
+    pub geo_api_lock: Mutex<()>,
 }
 
-impl SuspendProxy {
-    pub async fn block_ip(&self, ip: &str) -> Result<(), AppError> {
-        let ip = ip.parse::<IpAddr>()?;
+struct RequestMetadata {
+    user_agent: String,
+    client_ip: IpAddr,
+    host: String,
+    method: String,
+    uri: String,
+}
+
+impl RequestMetadata {
+    pub fn parse(session: &Session) -> Result<Self, AppError> {
+        let user_agent = session
+            .req_header()
+            .headers
+            .get("User-Agent")
+            .and_then(|h| h.to_str().ok())
+            .map(|h| h.to_string())
+            .unwrap_or_default();
+
+        let client_ip = session
+            .req_header()
+            .headers
+            .get("X-Forwarded-For")
+            .and_then(|h| h.to_str().ok())
+            .map(|h| h.to_string())
+            .unwrap_or_default();
+
+        let host = session
+            .req_header()
+            .headers
+            .get("Host")
+            .and_then(|h| h.to_str().ok())
+            .map(|h| h.to_string())
+            .unwrap_or_default();
+
+        let method = session.req_header().method.as_str().to_string();
+        let uri = session.req_header().uri.path().to_string();
+
+        Ok(Self {
+            user_agent,
+            client_ip: client_ip.parse()?,
+            host,
+            method,
+            uri,
+        })
+    }
+}
+
+impl PingoraProxy {
+    async fn add_ip_to_blocklist(&self, ip: IpAddr) {
         let client = Client::new();
 
-        let body = BlocklistIp { ip: IpNetwork::from(ip) };
-
-        let resp = client
+        let body = BlocklistIp {
+            ip: IpNetwork::from(ip),
+        };
+        match client
             .post("http://192.168.0.10:6060/blocklist")
             .json(&body) // <-- same as: -H "Content-Type: application/json" -d '{"ip": "..."}'
             .send()
-            .await?;
+            .await
+        {
+            Ok(resp) => {
+                if !resp.status().is_success() {
+                    warn!("error adding IP to blocklist; return code: {}", resp.status());
+                }
+            },
+            Err(e) => error!("Error adding IP: {ip} to the blocklist {e}")
+        };
 
-        if !resp.status().is_success() {
-            warn!("error adding IP to blocklist");
-        }
+        info!("added IP: {ip} to the blocklist");
 
-        Ok(())
     }
 
-    pub async fn is_blocked_ip_geolocation(&self, ip: &str) -> Result<bool, AppError> {
-        let ip = ip.parse::<IpAddr>()?;
+
+
+    async fn is_blocked(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
+        if let Some(user_agent_blocklist) = &server.user_agent_blocklist {
+            if user_agent_blocklist.iter().any(|ua| {
+                metadata
+                    .user_agent
+                    .to_lowercase()
+                    .contains(ua.to_lowercase().as_str())
+            }) {
+                self.add_ip_to_blocklist(metadata.client_ip).await;
+                warn!("blocked user-agent: {}, Host: {}, User-Agent: {}", metadata.client_ip, metadata.host, metadata.user_agent);
+                return true;
+            }
+        }
+
+        match self
+            .is_blocked_ip_geolocation(metadata.client_ip, server)
+            .await
+        {
+            Ok(blocked) if blocked => {
+                self.add_ip_to_blocklist(metadata.client_ip).await;
+                warn!("blocked IP: {}, Host: {}, User-Agent: {}",metadata.client_ip, metadata.host, metadata.user_agent);
+            }
+            Err(e) => {
+                error!("{e}");
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    pub async fn is_blocked_ip_geolocation(
+        &self,
+        ip: IpAddr,
+        server: &ServerConfig,
+    ) -> Result<bool, AppError> {
+        let Some(geo_fence_allowlist) = &server.geo_fence_allowlist else {
+            trace!("empty geo fence allowlist");
+            return Ok(false);
+        };
         match ip {
             IpAddr::V4(ipv4) => {
                 if ipv4.is_private() {
@@ -65,14 +155,9 @@ impl SuspendProxy {
             }
         }
         debug!("geolocating IP: {:?}", ip);
-        if self.geo_fence_allowlist.contains(&ip) {
-            debug!("geolocation allowlist hit: {:?}", ip);
-            return Ok(true);
-        }
-
         if let Some(code) = self.geo_fence.read().await.get(&ip) {
             debug!("geolocation cache hit: {:?}", code);
-            return Ok(code.is_blocked());
+            return Ok(code.is_blocked(geo_fence_allowlist));
         }
         {
             let _lock = self.geo_api_lock.lock().await;
@@ -83,15 +168,15 @@ impl SuspendProxy {
                 .map_err(|e| AppError::ParseError(format!("{e}")))?;
 
             let mut fence = self.geo_fence.write().await;
-            let country = fence.entry(ip).or_insert(data.country_code2);
+            let code = fence.entry(ip).or_insert(data.country_code2.clone());
             info!("geolocation request data: {:?}", data);
-            Ok(country.is_blocked())
+            Ok(code.is_blocked(geo_fence_allowlist))
         }
     }
 }
 
 #[async_trait]
-impl ProxyHttp for SuspendProxy {
+impl ProxyHttp for PingoraProxy {
     type CTX = ();
 
     fn new_ctx(&self) -> Self::CTX {
@@ -106,33 +191,24 @@ impl ProxyHttp for SuspendProxy {
         let Some(host) = session.req_header().headers.get("Host") else {
             return Err(Error::explain(
                 HTTPStatus(404),
-                "Endpoint not supported by pproxy",
+                "Server name not supported by pproxy",
             ));
         };
         debug!("upstream: {:?}", host);
-        let mut peer = if host
-            .to_str()
-            .map_err(|e| Error::explain(HTTPStatus(400), format!("{e}")))?
-            .eq("jellyfin.hafka.eu")
-        {
-            Box::new(HttpPeer::new(
-                &self.upstreams.jellyfin,
-                false,
-                "".to_string(),
-            ))
-        } else if host
-            .to_str()
-            .map_err(|e| Error::explain(HTTPStatus(400), format!("{e}")))?
-            .eq("immich.hafka.eu")
-        {
-            Box::new(HttpPeer::new(&self.upstreams.immich, false, "".to_string()))
-        } else {
-            return Err(Error::explain(
-                HTTPStatus(404),
-                "Endpoint not supported by pproxy",
-            ));
-        };
 
+        let mut peer =
+            if let Some(server_config) = self.servers.get(host.to_str().unwrap_or_default()) {
+                Box::new(HttpPeer::new(
+                    &server_config.upstream,
+                    false,
+                    "".to_string(),
+                ))
+            } else {
+                return Err(Error::explain(
+                    HTTPStatus(404),
+                    "Server name not supported by pproxy",
+                ));
+            };
         peer.options.connection_timeout = Some(Duration::from_secs(120));
         Ok(peer)
     }
@@ -142,70 +218,43 @@ impl ProxyHttp for SuspendProxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
-        let user_agent = session
-            .req_header()
-            .headers
-            .get("User-Agent")
-            .and_then(|h| h.to_str().ok())
-            .unwrap_or_default();
-
-        let client = session
-            .req_header()
-            .headers
-            .get("X-Forwarded-For")
-            .and_then(|h| h.to_str().ok())
-            .unwrap_or_default();
-
-        let host = session
-            .req_header()
-            .headers
-            .get("Host")
-            .and_then(|h| h.to_str().ok())
-            .unwrap_or_default();
-
-        if self.user_agent_blocklist.iter().any(|ua| {
-            user_agent
-                .to_lowercase()
-                .contains(ua.to_lowercase().as_str())
-        }) {
-            if let Err(e) = self.block_ip(client).await {
-                error!("error adding IP: {client} to the blocklist: {e}");
-            }
-            warn!("blocked user-agent: {client}, Host: {host}, User-Agent: {user_agent}");
-            return Ok(true);
-        }
-
-        match self.is_blocked_ip_geolocation(client).await {
-            Ok(blocked) if blocked => {
-                if let Err(e) = self.block_ip(client).await {
-                    error!("error adding IP: {client} to the blocklist: {e}");
-                }
-                warn!("blocked IP: {client}, Host: {host}, User-Agent: {user_agent}");
-                return Ok(true);
-            }
+        let metadata = match RequestMetadata::parse(&session) {
+            Ok(h) => h,
             Err(e) => {
                 error!("{e}");
                 return Ok(true);
-            },
-            _ => {}
+            }
+        };
+
+        let Some(server) = self.servers.get(&metadata.host) else {
+            warn!(
+                "could not find the server configuration for host: {}",
+                metadata.host
+            );
+            return Ok(true);
+        };
+
+        if self.is_blocked(&metadata, server).await {
+            return Ok(true);
         }
 
         let message = match (
+            server.suspending,
             self.state.auto_suspend_enabled.load(Ordering::Acquire),
             self.state.suspended.load(Ordering::Acquire),
         ) {
-            (true, true) => {
+            (true, true, true) => {
                 let msg = format!(
-                    "traffic detected: {:?} -- {:?} {:?} {:?}; User-Agent: {:?}",
-                    client,
-                    session.req_header().method.as_str(),
-                    host,
-                    session.req_header().uri.path(),
-                    user_agent
+                    "traffic detected: {} -- {} {} {}; User-Agent: {}",
+                    metadata.client_ip,
+                    metadata.method,
+                    metadata.host,
+                    metadata.uri,
+                    metadata.user_agent,
                 );
                 info!("{msg}");
                 self.state.logs.lock().await.insert(
-                    client.into(),
+                    metadata.client_ip,
                     (
                         OffsetDateTime::now_local().unwrap_or(OffsetDateTime::now_utc()),
                         msg,
@@ -214,7 +263,9 @@ impl ProxyHttp for SuspendProxy {
                 self.state.wake_up.store(true, Ordering::Release);
                 "The server is starting, the page will be refreshing automatically until you are redirected to immich/jellyfin. If not, try refreshing the page manually after about 10 seconds."
             }
-            (false, true) => "Auto suspend/wake up is disabled, please contact the administrator.",
+            (true, false, true) => {
+                "Auto suspend/wake up is disabled, please contact the administrator."
+            }
             _ => {
                 let mut timer = self.state.timer.write().await;
                 *timer = Instant::now();

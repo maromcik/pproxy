@@ -8,8 +8,12 @@ pub enum AppError {
     CommandError(String),
     #[error("parse error: {0}")]
     ParseError(String),
+    #[error("config error: {0}")]
+    ConfigError(String),
     #[error("request error: {0}")]
     RequestError(String),
+    #[error("server error: {0}")]
+    ServerError(String),
 }
 
 impl Debug for AppError {
@@ -27,5 +31,11 @@ impl From<AddrParseError> for AppError {
 impl From<reqwest::Error> for AppError {
     fn from(e: reqwest::Error) -> Self {
         Self::RequestError(e.to_string())
+    }
+}
+
+impl From<config::ConfigError> for AppError {
+    fn from(e: config::ConfigError) -> Self {
+        Self::ConfigError(e.to_string())
     }
 }

@@ -66,7 +66,7 @@ impl ProxyHttp for ControlService {
                 warn!("{msg}");
                 Some(msg.to_string())
             } else {
-                match call_script(&self.state.commands.suspend).await {
+                match call_script(&self.state.commands.suspend_command).await {
                     Ok(_) => {
                         let msg = "admin: upstream suspending";
                         info!("{msg}");
@@ -81,7 +81,7 @@ impl ProxyHttp for ControlService {
                 }
             }
         } else if path == "/status" {
-            if let Some(stat_command) = &self.state.commands.status {
+            if let Some(stat_command) = &self.state.commands.status_command {
                 match call_script(stat_command).await {
                     Ok(out) => Some(format!("{}", out)),
                     Err(e) => Some(format!("Failed to execute command: {}", e)),
@@ -101,7 +101,7 @@ impl ProxyHttp for ControlService {
             .clone()
             .into_iter()
             .sorted_by_key(|(_, (d, _))| *d)
-            .map(|(k, (d, l))| (k, (d.to_string(), l)))
+            .map(|(k, (d, l))| (k.to_string(), (d.to_string(), l)))
             .collect_vec();
 
         let tmpl = ControlPageTemplate {
@@ -158,7 +158,10 @@ impl Service for MonitorService {
         loop {
             let wall_time = Instant::now();
             sleep(interval).await;
-            if call_script(&self.state.commands.check).await.is_err() {
+            if call_script(&self.state.commands.check_command)
+                .await
+                .is_err()
+            {
                 self.state.suspended.store(true, Ordering::Release);
                 self.state.suspending.store(false, Ordering::Release);
                 trace!("check failed: upstream suspended");
@@ -176,7 +179,7 @@ impl Service for MonitorService {
             if self.state.suspended.load(Ordering::Acquire) {
                 if self.state.wake_up.load(Ordering::Acquire) {
                     info!("waking up upstream");
-                    let _ = call_script(&self.state.commands.wake).await;
+                    let _ = call_script(&self.state.commands.wake_command).await;
                     let mut timer = self.state.timer.write().await;
                     *timer = Instant::now();
                 }
@@ -190,7 +193,7 @@ impl Service for MonitorService {
                     drop(last_activity);
                     self.state.suspending.store(true, Ordering::Release);
                     info!("timeout reached: suspending upstream");
-                    match call_script(&self.state.commands.suspend).await {
+                    match call_script(&self.state.commands.suspend_command).await {
                         Ok(_) => {
                             info!("timeout reached: upstream suspended");
                         }
