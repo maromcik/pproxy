@@ -2,7 +2,7 @@ use crate::ServerState;
 use crate::blocklist::BlocklistIp;
 use crate::config::{ServerConfig, Servers};
 use crate::error::AppError;
-use crate::geo::{GeoData};
+use crate::geo::GeoData;
 use crate::templates::PublicPageTemplate;
 use askama::Template;
 use async_trait::async_trait;
@@ -163,7 +163,7 @@ impl PingoraProxy {
         debug!("geolocating IP: {:?}", ip);
         if let Some(code) = self.geo_fence.read().await.get(&ip) {
             debug!("geolocation cache hit: {:?}", code);
-            return Ok(geo_fence_allowlist.contains(code))
+            return Ok(geo_fence_allowlist.contains(code));
         }
         {
             let _lock = self.geo_api_lock.lock().await;
@@ -174,7 +174,9 @@ impl PingoraProxy {
                 .map_err(|e| AppError::ParseError(format!("{e}")))?;
 
             let mut fence = self.geo_fence.write().await;
-            let code = fence.entry(ip).or_insert(data.country_code2.to_lowercase());
+            let country_code = data.country_code2.to_lowercase();
+            debug!("country code: `{country_code}`");
+            let code = fence.entry(ip).or_insert(country_code);
             info!("geolocation request data: {:?}", data);
             Ok(geo_fence_allowlist.contains(code))
         }
@@ -272,6 +274,7 @@ impl ProxyHttp for PingoraProxy {
             (true, false, true) => {
                 "Auto suspend/wake up is disabled, please contact the administrator."
             }
+            (false, _, _) => return Ok(false),
             _ => {
                 let mut timer = self.state.timer.write().await;
                 *timer = Instant::now();
