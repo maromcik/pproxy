@@ -111,6 +111,8 @@ fn main() -> Result<(), AppError> {
     let mut proxy_service = http_proxy_service(
         &server.configuration,
         PingoraProxy {
+            blocklist_url: config.blocklist_url,
+            geo_api_url: config.geo_api_url,
             state,
             servers: config.servers,
             geo_fence: RwLock::new(HashMap::new()),

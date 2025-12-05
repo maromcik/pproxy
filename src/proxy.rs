@@ -23,6 +23,8 @@ use tokio::time::Instant;
 use tracing::{debug, error, trace, warn};
 
 pub struct PingoraProxy {
+    pub blocklist_url: String,
+    pub geo_api_url: String,
     pub state: Arc<ServerState>,
     pub servers: Servers,
     pub geo_fence: RwLock<HashMap<IpAddr, String>>,
@@ -85,7 +87,7 @@ impl PingoraProxy {
             ip: IpNetwork::from(ip),
         };
         match client
-            .post("http://192.168.0.10:6060/blocklist")
+            .post(&self.blocklist_url)
             .json(&body)
             .send()
             .await
@@ -137,7 +139,7 @@ impl PingoraProxy {
                 .build()?;
 
             let data = client
-                .get(format!("https://api.iplocation.net?ip={}", ip))
+                .get(format!("{}{}", self.geo_api_url, ip))
                 .send()
                 .await?
                 .json::<GeoData>()

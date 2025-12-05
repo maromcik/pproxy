@@ -1,6 +1,8 @@
 listen_host = "0.0.0.0:8050"
 listen_control_host = "0.0.0.0:5050"
 suspend_timeout = 300
+blocklist_url = "http://192.168.0.5:6060/blocklist"
+geo_api_url = "https://api.iplocation.net?ip="
 app_log_level = "debug"
 all_log_level = "info"
 
@@ -16,11 +18,11 @@ status_command = "ssh -o ConnectTimeout=1 root@192.168.0.10 sh -c /root/sus-save
 [servers."s1.example.com"]
     upstream = "192.168.1.10"
     suspending = true
-    user_agent_blocklist = []
-    geo_fence_allowlist = ['sk']
+    user_agent_blocklist = ["scapy","cypex"]
+    geo_fence_allowlist = ["de", "gb"]
 
 [servers."s2.example.com"]
     upstream = "192.168.1.11"
     suspending = false
-    user_agent_blocklist = []
-    geo_fence_allowlist = []
+    user_agent_blocklist = ["facebook","scapy","cypex","scanning"]
+    geo_fence_allowlist = ["de", "gb"]
