@@ -29,6 +29,7 @@ pub struct PingoraProxy {
     pub geo_api_lock: Mutex<()>,
 }
 
+#[derive(Debug)]
 struct RequestMetadata {
     user_agent: String,
     client_ip: IpAddr,
@@ -103,44 +104,7 @@ impl PingoraProxy {
         info!("added IP: {ip} to the blocklist");
     }
 
-    async fn is_blocked(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
-        if let Some(user_agent_blocklist) = &server.user_agent_blocklist {
-            if user_agent_blocklist.iter().any(|ua| {
-                metadata
-                    .user_agent
-                    .to_lowercase()
-                    .contains(ua.to_lowercase().as_str())
-            }) {
-                self.add_ip_to_blocklist(metadata.client_ip).await;
-                warn!(
-                    "blocked user-agent: {}, Host: {}, User-Agent: {}",
-                    metadata.client_ip, metadata.host, metadata.user_agent
-                );
-                return true;
-            }
-        }
-
-        match self
-            .is_blocked_ip_geolocation(metadata.client_ip, server)
-            .await
-        {
-            Ok(blocked) if blocked => {
-                self.add_ip_to_blocklist(metadata.client_ip).await;
-                warn!(
-                    "blocked IP: {}, Host: {}, User-Agent: {}",
-                    metadata.client_ip, metadata.host, metadata.user_agent
-                );
-                true
-            }
-            Err(e) => {
-                error!("{e}");
-                true
-            }
-            _ => false
-        }
-    }
-
-    pub async fn is_blocked_ip_geolocation(
+    async fn is_blocked_ip_geolocation(
         &self,
         ip: IpAddr,
         server: &ServerConfig,
@@ -168,7 +132,13 @@ impl PingoraProxy {
         }
         {
             let _lock = self.geo_api_lock.lock().await;
-            let data = reqwest::get(format!("https://api.iplocation.net?ip={}", ip))
+            let client = Client::builder()
+                .timeout(Duration::from_secs(3))
+                .build()?;
+
+            let data = client
+                .get(format!("https://api.iplocation.net?ip={}", ip))
+                .send()
                 .await?
                 .json::<GeoData>()
                 .await
@@ -176,12 +146,51 @@ impl PingoraProxy {
 
             let mut fence = self.geo_fence.write().await;
             let country_code = data.country_code2.to_lowercase();
-            debug!("country code: `{country_code}`");
+            debug!("country code: {country_code}");
             let code = fence.entry(ip).or_insert(country_code);
             info!("geolocation request data: {:?}", data);
             Ok(!geo_fence_allowlist.contains(code))
         }
     }
+
+    async fn is_blocked(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
+        if let Some(user_agent_blocklist) = &server.user_agent_blocklist {
+            if user_agent_blocklist.iter().any(|ua| {
+                metadata
+                    .user_agent
+                    .to_lowercase()
+                    .contains(ua.to_lowercase().as_str())
+            }) {
+                self.add_ip_to_blocklist(metadata.client_ip).await;
+                warn!(
+                    "blocked user-agent: {}, Host: {}, User-Agent: {}",
+                    metadata.client_ip, metadata.host, metadata.user_agent
+                );
+                return true;
+            }
+        }
+
+        match self
+            .is_blocked_ip_geolocation(metadata.client_ip, server)
+            .await
+        {
+            Ok(blocked) if !blocked => false,
+            Err(e) => {
+                error!("{e}");
+                true
+            }
+            _ => {
+                self.add_ip_to_blocklist(metadata.client_ip).await;
+                warn!(
+                    "blocked IP: {}, Host: {}, User-Agent: {}",
+                    metadata.client_ip, metadata.host, metadata.user_agent
+                );
+                true
+            }
+        }
+    }
+
+
 }
 
 #[async_trait]
@@ -244,7 +253,7 @@ impl ProxyHttp for PingoraProxy {
         };
 
         if self.is_blocked(&metadata, server).await {
-            warn!("ip blocked");
+            info!("blocked request: {:?}", metadata);
             return Ok(true);
         }
 
