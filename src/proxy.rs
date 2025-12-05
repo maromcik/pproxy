@@ -163,7 +163,7 @@ impl PingoraProxy {
         debug!("geolocating IP: {:?}", ip);
         if let Some(code) = self.geo_fence.read().await.get(&ip) {
             debug!("geolocation cache hit: {:?}", code);
-            return Ok(geo_fence_allowlist.contains(code));
+            return Ok(!geo_fence_allowlist.contains(code));
         }
         {
             let _lock = self.geo_api_lock.lock().await;
@@ -178,7 +178,7 @@ impl PingoraProxy {
             debug!("country code: `{country_code}`");
             let code = fence.entry(ip).or_insert(country_code);
             info!("geolocation request data: {:?}", data);
-            Ok(geo_fence_allowlist.contains(code))
+            Ok(!geo_fence_allowlist.contains(code))
         }
     }
 }
