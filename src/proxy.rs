@@ -177,7 +177,7 @@ impl PingoraProxy {
             Ok(blocked) if !blocked => false,
             Err(e) => {
                 error!("{e}");
-                false
+                true
             }
             _ => {
                 self.add_ip_to_blocklist(metadata.client_ip).await;
