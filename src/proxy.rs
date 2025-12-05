@@ -130,13 +130,14 @@ impl PingoraProxy {
                     "blocked IP: {}, Host: {}, User-Agent: {}",
                     metadata.client_ip, metadata.host, metadata.user_agent
                 );
+                true
             }
             Err(e) => {
                 error!("{e}");
+                true
             }
-            _ => return false,
+            _ => false
         }
-        true
     }
 
     pub async fn is_blocked_ip_geolocation(
@@ -243,6 +244,7 @@ impl ProxyHttp for PingoraProxy {
         };
 
         if self.is_blocked(&metadata, server).await {
+            warn!("ip blocked");
             return Ok(true);
         }
 
