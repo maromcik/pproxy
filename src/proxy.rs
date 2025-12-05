@@ -11,7 +11,7 @@ use log::info;
 use pingora::http::ResponseHeader;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use pingora::{Error, HTTPStatus};
-use reqwest::{Client, Response};
+use reqwest::{Client};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;

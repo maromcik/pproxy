@@ -1,7 +1,7 @@
 listen_host = "0.0.0.0:8050"
 listen_control_host = "0.0.0.0:5050"
 suspend_timeout = 300
-app_log_level = "info"
+app_log_level = "debug"
 all_log_level = "info"
 
 
@@ -13,14 +13,14 @@ status_command = "ssh -o ConnectTimeout=1 root@192.168.0.10 sh -c /root/sus-save
 
 [servers]
 
-    [s1.example.com]
-        upstream = "192.168.1.10"
-        suspending = true
-        user_agent_blocklist = []
-        geo_fence_allowlist = []
+[servers."s1.example.com"]
+    upstream = "192.168.1.10"
+    suspending = true
+    user_agent_blocklist = []
+    geo_fence_allowlist = []
 
-    [s2.example.com]
-        upstream = "192.168.1.11"
-        suspending = false
-        user_agent_blocklist = []
-        geo_fence_allowlist = []
+[servers."s2.example.com"]
+    upstream = "192.168.1.11"
+    suspending = false
+    user_agent_blocklist = []
+    geo_fence_allowlist = []
