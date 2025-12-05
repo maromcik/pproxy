@@ -13,7 +13,7 @@ use crate::management::{ControlService, MonitorService};
 use crate::proxy::PingoraProxy;
 use clap::Parser;
 use pingora::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -117,6 +117,7 @@ fn main() -> Result<(), AppError> {
             servers: config.servers,
             geo_fence: RwLock::new(HashMap::new()),
             geo_api_lock: Mutex::new(()),
+            blocked_ips: RwLock::new(HashSet::new()),
         },
     );
     //

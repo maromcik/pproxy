@@ -12,7 +12,7 @@ use pingora::http::ResponseHeader;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use pingora::{Error, HTTPStatus};
 use reqwest::Client;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -29,6 +29,7 @@ pub struct PingoraProxy {
     pub servers: Servers,
     pub geo_fence: RwLock<HashMap<IpAddr, String>>,
     pub geo_api_lock: Mutex<()>,
+    pub blocked_ips: RwLock<HashSet<IpAddr>>,
 }
 
 #[derive(Debug)]
@@ -81,6 +82,11 @@ impl RequestMetadata {
 
 impl PingoraProxy {
     async fn add_ip_to_blocklist(&self, ip: IpAddr) {
+        if self.blocked_ips.read().await.contains(&ip) {
+            info!("IP: {ip} already in the blocklist");
+            return;
+        }
+        
         let client = Client::new();
 
         let body = BlocklistIp {
@@ -93,17 +99,19 @@ impl PingoraProxy {
             .await
         {
             Ok(resp) => {
-                if !resp.status().is_success() {
+                if resp.status().is_success() {
+                    info!("added IP: {ip} to the blocklist");
+                    self.blocked_ips.write().await.insert(ip);
+                }
+                else {
                     warn!(
                         "error adding IP to blocklist; return code: {}",
                         resp.status()
                     );
                 }
             }
-            Err(e) => error!("Error adding IP: {ip} to the blocklist {e}"),
+            Err(e) => error!("error adding IP: {ip} to the blocklist {e}"),
         };
-
-        info!("added IP: {ip} to the blocklist");
     }
 
     async fn is_blocked_ip_geolocation(
