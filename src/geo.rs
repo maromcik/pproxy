@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::net::IpAddr;
 
 // #[derive(Debug, Clone, Copy)]
@@ -65,20 +64,20 @@ pub struct GeoData {
     pub ip: IpAddr,
     pub country_name: String,
     // pub ip_version: String,
-    pub country_code2: CountryCode,
+    pub country_code2: String,
     // pub ip_number: u16,
     pub isp: String,
     pub response_message: String,
     pub response_code: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CountryCode {
-    code: String,
-}
-
-impl CountryCode {
-    pub fn is_blocked(&self, allow_list: &HashSet<CountryCode>) -> bool {
-        allow_list.contains(self)
-    }
-}
+// #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+// pub struct CountryCode {
+//     code: String,
+// }
+//
+// impl CountryCode {
+//     pub fn is_blocked(&self, allow_list: &HashSet<CountryCode>) -> bool {
+//         allow_list.contains(self)
+//     }
+// }

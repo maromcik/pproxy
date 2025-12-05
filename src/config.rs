@@ -1,7 +1,6 @@
 use crate::error::AppError;
-use crate::geo::CountryCode;
 use config::Config;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{HashMap, HashSet};
 
 pub type Servers = HashMap<String, ServerConfig>;
@@ -17,8 +16,27 @@ pub struct ServerConfig {
     pub suspending: bool,
     #[serde(default)]
     pub user_agent_blocklist: Option<HashSet<String>>,
-    pub geo_fence_allowlist: Option<HashSet<CountryCode>>,
+    #[serde(default, deserialize_with = "lowercase_fence_geo_allowlist")]
+    pub geo_fence_allowlist: Option<HashSet<String>>,
 }
+
+fn lowercase_fence_geo_allowlist<'de, D>(deserializer: D) -> Result<Option<HashSet<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<HashSet<String>>::deserialize(deserializer)?;
+
+    let Some(set) = opt else {
+        return Ok(None);
+    };
+
+    let lowered = set.into_iter()
+        .map(|s| s.to_lowercase())
+        .collect();
+
+    Ok(Some(lowered))
+}
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommandConfig {

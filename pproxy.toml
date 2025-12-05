@@ -17,7 +17,7 @@ status_command = "ssh -o ConnectTimeout=1 root@192.168.0.10 sh -c /root/sus-save
     upstream = "192.168.1.10"
     suspending = true
     user_agent_blocklist = []
-    geo_fence_allowlist = []
+    geo_fence_allowlist = ['sk']
 
 [servers."s2.example.com"]
     upstream = "192.168.1.11"
