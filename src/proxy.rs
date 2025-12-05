@@ -11,7 +11,7 @@ use log::info;
 use pingora::http::ResponseHeader;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use pingora::{Error, HTTPStatus};
-use reqwest::{Client};
+use reqwest::Client;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -85,23 +85,23 @@ impl PingoraProxy {
         };
         match client
             .post("http://192.168.0.10:6060/blocklist")
-            .json(&body) // <-- same as: -H "Content-Type: application/json" -d '{"ip": "..."}'
+            .json(&body)
             .send()
             .await
         {
             Ok(resp) => {
                 if !resp.status().is_success() {
-                    warn!("error adding IP to blocklist; return code: {}", resp.status());
+                    warn!(
+                        "error adding IP to blocklist; return code: {}",
+                        resp.status()
+                    );
                 }
-            },
-            Err(e) => error!("Error adding IP: {ip} to the blocklist {e}")
+            }
+            Err(e) => error!("Error adding IP: {ip} to the blocklist {e}"),
         };
 
         info!("added IP: {ip} to the blocklist");
-
     }
-
-
 
     async fn is_blocked(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
         if let Some(user_agent_blocklist) = &server.user_agent_blocklist {
@@ -112,7 +112,10 @@ impl PingoraProxy {
                     .contains(ua.to_lowercase().as_str())
             }) {
                 self.add_ip_to_blocklist(metadata.client_ip).await;
-                warn!("blocked user-agent: {}, Host: {}, User-Agent: {}", metadata.client_ip, metadata.host, metadata.user_agent);
+                warn!(
+                    "blocked user-agent: {}, Host: {}, User-Agent: {}",
+                    metadata.client_ip, metadata.host, metadata.user_agent
+                );
                 return true;
             }
         }
@@ -123,7 +126,10 @@ impl PingoraProxy {
         {
             Ok(blocked) if blocked => {
                 self.add_ip_to_blocklist(metadata.client_ip).await;
-                warn!("blocked IP: {}, Host: {}, User-Agent: {}",metadata.client_ip, metadata.host, metadata.user_agent);
+                warn!(
+                    "blocked IP: {}, Host: {}, User-Agent: {}",
+                    metadata.client_ip, metadata.host, metadata.user_agent
+                );
             }
             Err(e) => {
                 error!("{e}");
