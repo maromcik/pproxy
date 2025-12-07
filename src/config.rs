@@ -63,13 +63,16 @@ pub struct AppConfig {
     pub all_log_level: String,
 }
 
-pub fn parse_config(settings_path: &str) -> Result<AppConfig, AppError> {
-    let settings = Config::builder()
-        .add_source(config::File::with_name(settings_path))
-        .add_source(config::Environment::with_prefix("APP"))
-        .build()?;
+impl AppConfig {
+    pub fn parse_config(settings_path: &str) -> Result<AppConfig, AppError> {
+        let settings = Config::builder()
+            .add_source(config::File::with_name(settings_path))
+            .add_source(config::Environment::with_prefix("APP"))
+            .build()?;
 
-    let config = settings.try_deserialize::<AppConfig>()?;
+        let config = settings.try_deserialize::<AppConfig>()?;
 
-    Ok(config)
+        Ok(config)
+    }
 }
+

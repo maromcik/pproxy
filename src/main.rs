@@ -7,7 +7,7 @@ mod proxy;
 mod templates;
 mod utils;
 
-use crate::config::{CommandConfig, parse_config};
+use crate::config::{CommandConfig, AppConfig};
 use crate::error::AppError;
 use crate::management::{ControlService, MonitorService};
 use crate::proxy::PingoraProxy;
@@ -57,7 +57,7 @@ pub struct ServerState {
 fn main() -> Result<(), AppError> {
     let cli = Cli::parse();
 
-    let config = parse_config(&cli.config)?;
+    let config = AppConfig::parse_config(&cli.config)?;
     let env = EnvFilter::new(
         format!("pproxy={},{}", config.app_log_level, config.all_log_level).as_str(),
     );
