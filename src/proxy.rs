@@ -17,6 +17,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use pingora::protocols::l4::socket::SocketAddr;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
@@ -51,13 +52,24 @@ impl RequestMetadata {
             .map(|h| h.to_string())
             .unwrap_or_default();
 
+        let client_addr = session
+            .client_addr()
+            .map(|addr| {
+                match addr {
+                    SocketAddr::Inet(ip) => ip.ip().to_string(),
+                    SocketAddr::Unix(_) => String::new(),
+                }
+            })
+            .unwrap_or_default();
+
         let client_ip = session
             .req_header()
             .headers
             .get("X-Forwarded-For")
             .and_then(|h| h.to_str().ok())
             .map(|h| h.to_string())
-            .unwrap_or_default();
+            .unwrap_or_else(|| client_addr);
+        debug!("Client IP: {}", client_ip);
 
         let host = session
             .req_header()
@@ -86,24 +98,18 @@ impl PingoraProxy {
             info!("IP: {ip} already in the blocklist");
             return;
         }
-        
+
         let client = Client::new();
 
         let body = BlocklistIp {
             ip: IpNetwork::from(ip),
         };
-        match client
-            .post(&self.blocklist_url)
-            .json(&body)
-            .send()
-            .await
-        {
+        match client.post(&self.blocklist_url).json(&body).send().await {
             Ok(resp) => {
                 if resp.status().is_success() {
                     info!("added IP: {ip} to the blocklist");
                     self.blocked_ips.write().await.insert(ip);
-                }
-                else {
+                } else {
                     warn!(
                         "error adding IP to blocklist; return code: {}",
                         resp.status()
@@ -142,9 +148,7 @@ impl PingoraProxy {
         }
         {
             let _lock = self.geo_api_lock.lock().await;
-            let client = Client::builder()
-                .timeout(Duration::from_secs(3))
-                .build()?;
+            let client = Client::builder().timeout(Duration::from_secs(3)).build()?;
 
             let data = client
                 .get(format!("{}{}", self.geo_api_url, metadata.client_ip))
@@ -158,7 +162,10 @@ impl PingoraProxy {
             let country_code = data.country_code2.to_lowercase();
             debug!("country code: {country_code}");
             let code = fence.entry(metadata.client_ip).or_insert(country_code);
-            info!("request metadata: {:?}; geolocation data: {:?}", metadata, data);
+            info!(
+                "request metadata: {:?}; geolocation data: {:?}",
+                metadata, data
+            );
             Ok(!geo_fence_allowlist.contains(code))
         }
     }
@@ -180,10 +187,7 @@ impl PingoraProxy {
             }
         }
 
-        match self
-            .is_blocked_ip_geolocation(metadata, server)
-            .await
-        {
+        match self.is_blocked_ip_geolocation(metadata, server).await {
             Ok(blocked) if !blocked => false,
             Err(e) => {
                 error!("{e}");
@@ -199,8 +203,6 @@ impl PingoraProxy {
             }
         }
     }
-
-
 }
 
 #[async_trait]

@@ -1,4 +1,4 @@
-listen_host = "0.0.0.0:8050"
+listen_host = "0.0.0.0:9000"
 listen_control_host = "0.0.0.0:5050"
 suspend_timeout = 300
 blocklist_url = "http://192.168.0.5:6060/blocklist"
@@ -15,11 +15,11 @@ status_command = "ssh -o ConnectTimeout=1 root@192.168.0.10 sh -c /root/sus-save
 
 [servers]
 
-[servers."s1.example.com"]
-    upstream = "192.168.1.10"
-    suspending = true
-    user_agent_blocklist = ["scapy","cypex"]
-    geo_fence_allowlist = ["de", "gb"]
+[servers."localhost:9000"]
+    upstream = "127.0.0.1:8000"
+    suspending = false
+#    user_agent_blocklist = ["scapy","cypex"]
+#    geo_fence_allowlist = ["de", "gb"]
 
 [servers."s2.example.com"]
     upstream = "192.168.1.11"
