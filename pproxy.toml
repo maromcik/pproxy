@@ -3,7 +3,7 @@ listen_control_host = "0.0.0.0:5050"
 suspend_timeout = 300
 blocklist_url = "http://192.168.0.5:6060/blocklist"
 geo_api_url = "https://api.iplocation.net?ip="
-app_log_level = "debug"
+app_log_level = "info"
 all_log_level = "info"
 
 

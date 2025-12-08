@@ -282,7 +282,7 @@ impl ProxyHttp for PingoraProxy {
                     metadata.user_agent,
                 );
                 info!("{msg}");
-                self.state.logs.lock().await.insert(
+                self.state.logs.write().await.insert(
                     metadata.client_ip,
                     (
                         OffsetDateTime::now_local().unwrap_or(OffsetDateTime::now_utc()),

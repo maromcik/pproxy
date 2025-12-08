@@ -18,10 +18,11 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
+use pingora::server::configuration::ServerConf;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
@@ -51,7 +52,7 @@ pub struct ServerState {
     pub auto_suspend_enabled: AtomicBool,
     pub commands: CommandConfig,
     pub time_monitoring: RwLock<TimeMonitoring>,
-    pub logs: Mutex<HashMap<IpAddr, (OffsetDateTime, String)>>,
+    pub logs: RwLock<HashMap<IpAddr, (OffsetDateTime, String)>>,
 }
 
 fn main() -> Result<(), AppError> {
@@ -70,13 +71,31 @@ fn main() -> Result<(), AppError> {
 
     debug!("Using config: {:?}", &config);
 
-    let mut server = match Server::new(Some(Opt::default())) {
-        Ok(s) => s,
-        Err(e) => {
-            error!("Failed to create server: {e}");
-            return Err(AppError::ServerError(e.to_string()));
-        }
+    let conf = ServerConf {
+        version: 0,
+        client_bind_to_ipv4: vec![],
+        client_bind_to_ipv6: vec![],
+        ca_file: None,
+        daemon: false,
+        error_log: None,
+        upstream_debug_ssl_keylog: false,
+        pid_file: "/tmp/pingora.pid".to_string(),
+        upgrade_sock: "/tmp/pingora_upgrade.sock".to_string(),
+        user: None,
+        group: None,
+        threads: num_cpus::get(),
+        listener_tasks_per_fd: 1,
+        work_stealing: true,
+        upstream_keepalive_pool_size: 128,
+        upstream_connect_offload_threadpools: None,
+        upstream_connect_offload_thread_per_pool: None,
+        grace_period_seconds: None,
+        graceful_shutdown_timeout_seconds: None,
+        max_retries: 16,
     };
+
+    let mut server = Server::new_with_opt_and_conf(None, conf);
+    info!("Server conf: {:?}", server.configuration);
     server.bootstrap();
 
     let state = Arc::new(ServerState {
@@ -91,7 +110,7 @@ fn main() -> Result<(), AppError> {
             active_time: Duration::from_secs(0),
             suspended_time: Duration::from_secs(0),
         }),
-        logs: Mutex::new(HashMap::new()),
+        logs: RwLock::new(HashMap::new()),
     });
 
     info!("Bootstrap done");

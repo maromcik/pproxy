@@ -96,10 +96,11 @@ impl ProxyHttp for ControlService {
         let logs = self
             .state
             .logs
-            .lock()
+            .read()
             .await
-            .clone()
-            .into_iter()
+            .clone();
+
+        let logs = logs.into_iter()
             .sorted_by_key(|(_, (d, _))| *d)
             .map(|(k, (d, l))| (k.to_string(), (d.to_string(), l)))
             .collect_vec();

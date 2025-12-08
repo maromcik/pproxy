@@ -12,8 +12,8 @@ pub enum AppError {
     ConfigError(String),
     #[error("request error: {0}")]
     RequestError(String),
-    #[error("server error: {0}")]
-    ServerError(String),
+    // #[error("server error: {0}")]
+    // ServerError(String),
 }
 
 impl Debug for AppError {
