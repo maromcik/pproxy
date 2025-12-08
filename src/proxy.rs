@@ -116,14 +116,14 @@ impl PingoraProxy {
 
     async fn is_blocked_ip_geolocation(
         &self,
-        ip: IpAddr,
+        metadata: &RequestMetadata,
         server: &ServerConfig,
     ) -> Result<bool, AppError> {
         let Some(geo_fence_allowlist) = &server.geo_fence_allowlist else {
             trace!("empty geo fence allowlist");
             return Ok(false);
         };
-        match ip {
+        match metadata.client_ip {
             IpAddr::V4(ipv4) => {
                 if ipv4.is_private() {
                     return Ok(false);
@@ -135,8 +135,8 @@ impl PingoraProxy {
                 }
             }
         }
-        debug!("geolocating IP: {:?}", ip);
-        if let Some(code) = self.geo_fence.read().await.get(&ip) {
+        debug!("geolocating IP: {:?}", metadata.client_ip);
+        if let Some(code) = self.geo_fence.read().await.get(&metadata.client_ip) {
             debug!("geolocation cache hit: {:?}", code);
             return Ok(!geo_fence_allowlist.contains(code));
         }
@@ -147,7 +147,7 @@ impl PingoraProxy {
                 .build()?;
 
             let data = client
-                .get(format!("{}{}", self.geo_api_url, ip))
+                .get(format!("{}{}", self.geo_api_url, metadata.client_ip))
                 .send()
                 .await?
                 .json::<GeoData>()
@@ -157,8 +157,8 @@ impl PingoraProxy {
             let mut fence = self.geo_fence.write().await;
             let country_code = data.country_code2.to_lowercase();
             debug!("country code: {country_code}");
-            let code = fence.entry(ip).or_insert(country_code);
-            info!("geolocation request data: {:?}", data);
+            let code = fence.entry(metadata.client_ip).or_insert(country_code);
+            info!("request metadata: {:?}; geolocation data: {:?}", metadata, data);
             Ok(!geo_fence_allowlist.contains(code))
         }
     }
@@ -181,7 +181,7 @@ impl PingoraProxy {
         }
 
         match self
-            .is_blocked_ip_geolocation(metadata.client_ip, server)
+            .is_blocked_ip_geolocation(metadata, server)
             .await
         {
             Ok(blocked) if !blocked => false,
