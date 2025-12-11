@@ -71,30 +71,30 @@ fn main() -> Result<(), AppError> {
 
     debug!("Using config: {:?}", &config);
 
-    let conf = ServerConf {
-        version: 0,
-        client_bind_to_ipv4: vec![],
-        client_bind_to_ipv6: vec![],
-        ca_file: None,
-        daemon: false,
-        error_log: None,
-        upstream_debug_ssl_keylog: false,
-        pid_file: "/tmp/pingora.pid".to_string(),
-        upgrade_sock: "/tmp/pingora_upgrade.sock".to_string(),
-        user: None,
-        group: None,
-        threads: num_cpus::get(),
-        listener_tasks_per_fd: 1,
-        work_stealing: true,
-        upstream_keepalive_pool_size: 128,
-        upstream_connect_offload_threadpools: None,
-        upstream_connect_offload_thread_per_pool: None,
-        grace_period_seconds: None,
-        graceful_shutdown_timeout_seconds: None,
-        max_retries: 16,
-    };
+    // let conf = ServerConf {
+    //     version: 0,
+    //     client_bind_to_ipv4: vec![],
+    //     client_bind_to_ipv6: vec![],
+    //     ca_file: None,
+    //     daemon: false,
+    //     error_log: None,
+    //     upstream_debug_ssl_keylog: false,
+    //     pid_file: "/tmp/pingora.pid".to_string(),
+    //     upgrade_sock: "/tmp/pingora_upgrade.sock".to_string(),
+    //     user: None,
+    //     group: None,
+    //     threads: num_cpus::get(),
+    //     listener_tasks_per_fd: 1,
+    //     work_stealing: true,
+    //     upstream_keepalive_pool_size: 128,
+    //     upstream_connect_offload_threadpools: None,
+    //     upstream_connect_offload_thread_per_pool: None,
+    //     grace_period_seconds: None,
+    //     graceful_shutdown_timeout_seconds: None,
+    //     max_retries: 16,
+    // };
 
-    let mut server = Server::new_with_opt_and_conf(None, conf);
+    let mut server = Server::new(Some(Opt::default())).unwrap();
     info!("Server conf: {:?}", server.configuration);
     server.bootstrap();
 
