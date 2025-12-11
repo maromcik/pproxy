@@ -104,7 +104,7 @@ fn main() -> Result<(), AppError> {
         limit: Duration::from_secs(config.suspend_timeout),
         wake_up: AtomicBool::new(false),
         suspending: AtomicBool::new(false),
-        auto_suspend_enabled: AtomicBool::new(true),
+        auto_suspend_enabled: AtomicBool::new(false),
         commands: config.commands,
         time_monitoring: RwLock::new(TimeMonitoring {
             active_time: Duration::from_secs(0),
