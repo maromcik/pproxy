@@ -10,6 +10,7 @@ use ipnetwork::IpNetwork;
 use log::info;
 use pingora::http::ResponseHeader;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
+use pingora::protocols::l4::socket::SocketAddr;
 use pingora::{Error, HTTPStatus};
 use reqwest::Client;
 use std::collections::{HashMap, HashSet};
@@ -17,7 +18,6 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use pingora::protocols::l4::socket::SocketAddr;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
@@ -28,7 +28,7 @@ pub struct PingoraProxy {
     pub geo_api_url: String,
     pub state: Arc<ServerState>,
     pub servers: Servers,
-    pub geo_fence: RwLock<HashMap<IpAddr, String>>,
+    pub geo_fence: RwLock<HashMap<IpAddr, GeoData>>,
     pub geo_api_lock: Mutex<()>,
     pub blocked_ips: RwLock<HashSet<IpAddr>>,
 }
@@ -54,11 +54,9 @@ impl RequestMetadata {
 
         let client_addr = session
             .client_addr()
-            .map(|addr| {
-                match addr {
-                    SocketAddr::Inet(ip) => ip.ip().to_string(),
-                    SocketAddr::Unix(_) => String::new(),
-                }
+            .map(|addr| match addr {
+                SocketAddr::Inet(ip) => ip.ip().to_string(),
+                SocketAddr::Unix(_) => String::new(),
             })
             .unwrap_or_default();
 
@@ -120,15 +118,28 @@ impl PingoraProxy {
         };
     }
 
+    fn is_geo_data_blocked(&self, geo_data: &GeoData, server: &ServerConfig) -> bool {
+        let country_allowed = server
+            .geo_fence_country_allowlist
+            .as_ref()
+            .is_none_or(|geo| geo.contains(geo_data.country_code2.as_str()));
+        let isp_allowed = server
+            .geo_fence_isp_allowlist
+            .as_ref()
+            .is_none_or(|geo| geo.contains(geo_data.isp.as_str()));
+        !country_allowed || !isp_allowed
+    }
+
     async fn is_blocked_ip_geolocation(
         &self,
         metadata: &RequestMetadata,
         server: &ServerConfig,
     ) -> Result<bool, AppError> {
-        let Some(geo_fence_allowlist) = &server.geo_fence_allowlist else {
+        if server.geo_fence_isp_allowlist.is_none() && server.geo_fence_country_allowlist.is_none() {
             trace!("empty geo fence allowlist");
             return Ok(false);
         };
+
         match metadata.client_ip {
             IpAddr::V4(ipv4) => {
                 if ipv4.is_private() {
@@ -142,9 +153,9 @@ impl PingoraProxy {
             }
         }
         debug!("geolocating IP: {:?}", metadata.client_ip);
-        if let Some(code) = self.geo_fence.read().await.get(&metadata.client_ip) {
-            debug!("geolocation cache hit: {:?}", code);
-            return Ok(!geo_fence_allowlist.contains(code));
+        if let Some(geo_data) = self.geo_fence.read().await.get(&metadata.client_ip) {
+            debug!("geolocation cache hit: {:?}", geo_data);
+            return Ok(self.is_geo_data_blocked(geo_data, server));
         }
         {
             let _lock = self.geo_api_lock.lock().await;
@@ -159,14 +170,12 @@ impl PingoraProxy {
                 .map_err(|e| AppError::ParseError(format!("{e}")))?;
 
             let mut fence = self.geo_fence.write().await;
-            let country_code = data.country_code2.to_lowercase();
-            debug!("country code: {country_code}");
-            let code = fence.entry(metadata.client_ip).or_insert(country_code);
             info!(
                 "request metadata: {:?}; geolocation data: {:?}",
                 metadata, data
             );
-            Ok(!geo_fence_allowlist.contains(code))
+            let geo_data = fence.entry(metadata.client_ip).or_insert(data);
+            Ok(self.is_geo_data_blocked(geo_data, server))
         }
     }
 

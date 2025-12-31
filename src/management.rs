@@ -93,14 +93,10 @@ impl ProxyHttp for ControlService {
             None
         };
         let time_monitoring = self.state.time_monitoring.read().await;
-        let logs = self
-            .state
-            .logs
-            .read()
-            .await
-            .clone();
+        let logs = self.state.logs.read().await.clone();
 
-        let logs = logs.into_iter()
+        let logs = logs
+            .into_iter()
             .sorted_by_key(|(_, (d, _))| *d)
             .map(|(k, (d, l))| (k.to_string(), (d.to_string(), l)))
             .collect_vec();
