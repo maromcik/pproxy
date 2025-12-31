@@ -19,7 +19,7 @@ pub struct ServerConfig {
     #[serde(default)]
     pub geo_fence_country_allowlist: Option<HashSet<String>>,
     #[serde(default)]
-    pub geo_fence_isp_allowlist: Option<HashSet<String>>,
+    pub geo_fence_isp_blocklist: Option<HashSet<String>>,
 }
 
 // fn lowercase_fence_geo_allowlist<'de, D>(

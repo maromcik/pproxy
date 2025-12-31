@@ -123,11 +123,11 @@ impl PingoraProxy {
             .geo_fence_country_allowlist
             .as_ref()
             .is_none_or(|geo| geo.contains(geo_data.country_code2.as_str()));
-        let isp_allowed = server
-            .geo_fence_isp_allowlist
+        let isp_blocked = server
+            .geo_fence_isp_blocklist
             .as_ref()
             .is_none_or(|geo| geo.contains(geo_data.isp.as_str()));
-        !country_allowed || !isp_allowed
+        !country_allowed || isp_blocked
     }
 
     async fn is_blocked_ip_geolocation(
@@ -135,7 +135,7 @@ impl PingoraProxy {
         metadata: &RequestMetadata,
         server: &ServerConfig,
     ) -> Result<bool, AppError> {
-        if server.geo_fence_isp_allowlist.is_none() && server.geo_fence_country_allowlist.is_none() {
+        if server.geo_fence_isp_blocklist.is_none() && server.geo_fence_country_allowlist.is_none() {
             trace!("empty geo fence allowlist");
             return Ok(false);
         };
