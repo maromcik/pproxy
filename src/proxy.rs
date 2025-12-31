@@ -126,7 +126,7 @@ impl PingoraProxy {
         let isp_blocked = server
             .geo_fence_isp_blocklist
             .as_ref()
-            .is_none_or(|geo| geo.contains(geo_data.isp.as_str()));
+            .is_some_and(|geo| geo.contains(geo_data.isp.as_str()));
         !country_allowed || isp_blocked
     }
 
