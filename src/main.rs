@@ -106,11 +106,12 @@ fn main() -> Result<(), AppError> {
         suspending: AtomicBool::new(false),
         auto_suspend_enabled: AtomicBool::new(false),
         commands: config.commands,
-        time_monitoring: RwLock::new(TimeMonitoring {
+        time_monitoring: TimeMonitoring {
             active_time: Duration::from_secs(0),
             suspended_time: Duration::from_secs(0),
-        }),
-        logs: RwLock::new(HashMap::new()),
+        }
+        .into(),
+        logs: HashMap::new().into(),
     });
 
     info!("Bootstrap done");

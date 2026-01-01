@@ -45,8 +45,10 @@ impl ProxyHttp for ControlService {
             self.state
                 .auto_suspend_enabled
                 .store(true, Ordering::Release);
-            let mut timer = self.state.timer.write().await;
-            *timer = Instant::now();
+            {
+                let mut timer = self.state.timer.write().await;
+                *timer = Instant::now();
+            }
             info!("auto-suspend: enabled");
             Some("Auto-suspend enabled.".to_string())
         } else if path == "/disable" {
@@ -92,15 +94,16 @@ impl ProxyHttp for ControlService {
         } else {
             None
         };
-        let time_monitoring = self.state.time_monitoring.read().await;
-        let logs = self.state.logs.read().await.clone();
 
+        let logs = self.state.logs.read().await.clone();
         let logs = logs
             .into_iter()
             .sorted_by_key(|(_, (d, _))| *d)
             .map(|(k, (d, l))| (k.to_string(), (d.to_string(), l)))
             .collect_vec();
 
+        let elapsed = self.state.timer.read().await.elapsed();
+        let time_monitoring = self.state.time_monitoring.read().await;
         let tmpl = ControlPageTemplate {
             message,
             enabled: self.state.auto_suspend_enabled.load(Ordering::Relaxed),
@@ -108,7 +111,7 @@ impl ProxyHttp for ControlService {
             waking_up: self.state.wake_up.load(Ordering::Relaxed),
             suspending: self.state.suspending.load(Ordering::Relaxed),
             limit: format!("{:?}", self.state.limit),
-            elapsed: format!("{:.2?}", self.state.timer.read().await.elapsed()),
+            elapsed: format!("{:.2?}", elapsed),
             active_time: format!(
                 "{:.2?} m",
                 time_monitoring.active_time.as_secs() as f64 / 60_f64

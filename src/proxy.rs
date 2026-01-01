@@ -135,7 +135,8 @@ impl PingoraProxy {
         metadata: &RequestMetadata,
         server: &ServerConfig,
     ) -> Result<bool, AppError> {
-        if server.geo_fence_isp_blocklist.is_none() && server.geo_fence_country_allowlist.is_none() {
+        if server.geo_fence_isp_blocklist.is_none() && server.geo_fence_country_allowlist.is_none()
+        {
             trace!("empty geo fence allowlist");
             return Ok(false);
         };
