@@ -109,7 +109,7 @@ impl PingoraProxy {
                     self.blocked_ips.write().await.insert(ip);
                 } else {
                     warn!(
-                        "error adding IP to blocklist; return code: {}",
+                        "error status adding IP to blocklist; return code: {}",
                         resp.status()
                     );
                 }
@@ -171,12 +171,15 @@ impl PingoraProxy {
                 .map_err(|e| AppError::ParseError(format!("{e}")))?;
 
             let mut fence = self.geo_fence.write().await;
-            info!(
-                "request metadata: {:?}; geolocation data: {:?}",
-                metadata, data
-            );
             let geo_data = fence.entry(metadata.client_ip).or_insert(data);
-            Ok(self.is_geo_data_blocked(geo_data, server))
+            let blocked = self.is_geo_data_blocked(geo_data, server);
+            if blocked {
+                warn!("BLOCKED:GEO; REQ: {metadata:?}; LOC: {geo_data:?}");
+            } else {
+                info!("REQ: {metadata:?}; LOC: {geo_data:?}");
+            }
+
+            Ok(blocked)
         }
     }
 
@@ -189,10 +192,7 @@ impl PingoraProxy {
                     .contains(ua.to_lowercase().as_str())
             }) {
                 self.add_ip_to_blocklist(metadata.client_ip).await;
-                warn!(
-                    "blocked user-agent: {}, Host: {}, User-Agent: {}",
-                    metadata.client_ip, metadata.host, metadata.user_agent
-                );
+                warn!("BLOCKED:UA: REQ: {metadata:?}");
                 return true;
             }
         }
@@ -205,10 +205,6 @@ impl PingoraProxy {
             }
             _ => {
                 self.add_ip_to_blocklist(metadata.client_ip).await;
-                warn!(
-                    "blocked IP: {}, Host: {}, User-Agent: {}",
-                    metadata.client_ip, metadata.host, metadata.user_agent
-                );
                 true
             }
         }
