@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::time::Instant;
-use tracing::trace;
+use tracing::{debug, trace};
 
 pub struct ControlService {
     pub state: Arc<ServerState>,
@@ -178,7 +178,7 @@ impl Service for MonitorService {
 
             if self.state.suspended.load(Ordering::Acquire) {
                 if self.state.wake_up.load(Ordering::Acquire) {
-                    info!("waking up upstream");
+                    debug!("waking up upstream");
                     let _ = call_script(&self.state.commands.wake_command).await;
                     let mut timer = self.state.timer.write().await;
                     *timer = Instant::now();

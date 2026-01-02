@@ -137,7 +137,7 @@ impl PingoraProxy {
     ) -> Result<bool, AppError> {
         if server.geo_fence_isp_blocklist.is_none() && server.geo_fence_country_allowlist.is_none()
         {
-            trace!("empty geo fence allowlist");
+            debug!("empty geo fence allowlist");
             return Ok(false);
         };
 
@@ -153,7 +153,6 @@ impl PingoraProxy {
                 }
             }
         }
-        debug!("geolocating IP: {:?}", metadata.client_ip);
         if let Some(geo_data) = self.geo_fence.read().await.get(&metadata.client_ip) {
             debug!("geolocation cache hit: {:?}", geo_data);
             return Ok(self.is_geo_data_blocked(geo_data, server));
@@ -176,7 +175,7 @@ impl PingoraProxy {
             if blocked {
                 warn!("BLOCKED:GEO; REQ: {metadata:?}; LOC: {geo_data:?}");
             } else {
-                info!("REQ: {metadata:?}; LOC: {geo_data:?}");
+                info!("ALLOWED:GEO; REQ: {metadata:?}; LOC: {geo_data:?}");
             }
 
             Ok(blocked)
@@ -271,8 +270,10 @@ impl ProxyHttp for PingoraProxy {
         };
 
         if self.is_blocked(&metadata, server).await {
-            info!("blocked request: {:?}", metadata);
+            info!("BLOCKED:REQ; {:?}", metadata);
             return Ok(true);
+        } else {
+            info!("ALLOWED:REQ; {:?}", metadata);
         }
 
         let message = match (
@@ -289,7 +290,7 @@ impl ProxyHttp for PingoraProxy {
                     metadata.uri,
                     metadata.user_agent,
                 );
-                info!("{msg}");
+                debug!("{msg}");
                 self.state.logs.write().await.insert(
                     metadata.client_ip,
                     (
