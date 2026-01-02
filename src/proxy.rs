@@ -104,7 +104,7 @@ impl RequestMetadata {
 impl PingoraProxy {
     async fn add_ip_to_blocklist(&self, ip: IpAddr) {
         if self.blocked_ips.read().await.contains(&ip) {
-            info!("IP: {ip} already in the blocklist");
+            info!("BLOCKLIST:DUPLICATE: {ip} already in the blocklist");
             return;
         }
 
@@ -116,16 +116,16 @@ impl PingoraProxy {
         match client.post(&self.blocklist_url).json(&body).send().await {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    info!("added IP: {ip} to the blocklist");
+                    info!("BLOCKLIST:ADDED: {ip}");
                     self.blocked_ips.write().await.insert(ip);
                 } else {
                     warn!(
-                        "error status adding IP to blocklist; return code: {}",
+                        "BLOCKLIST:FAILED: adding IP {ip} failed with status code: {}",
                         resp.status()
                     );
                 }
             }
-            Err(e) => error!("error adding IP: {ip} to the blocklist {e}"),
+            Err(e) => error!("BLOCKLIST:ERROR: adding IP {ip} failed with error: {e}"),
         };
     }
 
@@ -184,9 +184,9 @@ impl PingoraProxy {
             let geo_data = fence.entry(metadata.client_ip).or_insert(data);
             let blocked = self.is_geo_data_blocked(geo_data, server);
             if blocked {
-                warn!("BLOCKED:GEO; REQ: {metadata:?}; LOC: {geo_data:?}");
+                warn!("BLOCKED:GEO: {metadata}; LOC: {geo_data}");
             } else {
-                info!("ALLOWED:GEO; REQ: {metadata:?}; LOC: {geo_data:?}");
+                info!("ALLOWED:GEO: {metadata}; LOC: {geo_data}");
             }
 
             Ok(blocked)
@@ -202,7 +202,7 @@ impl PingoraProxy {
                     .contains(ua.to_lowercase().as_str())
             }) {
                 self.add_ip_to_blocklist(metadata.client_ip).await;
-                warn!("BLOCKED:UA: REQ: {metadata:?}");
+                warn!("BLOCKED:UA: {metadata}");
                 return true;
             }
         }
@@ -281,7 +281,7 @@ impl ProxyHttp for PingoraProxy {
         };
 
         if self.is_blocked(&metadata, server).await {
-            info!("BLOCKED:REQ; {metadata}");
+            info!("BLOCKED:REQ: {metadata}");
             return Ok(true);
         }
 
@@ -303,7 +303,7 @@ impl ProxyHttp for PingoraProxy {
                 "The server is starting, the page will be refreshing automatically until you are redirected to immich/jellyfin. If not, try refreshing the page manually after about 10 seconds."
             }
             (true, false, true) => {
-                info!("REQ:DISABLED:ATTEMPT TO RESUME: {metadata}");
+                info!("REQ:DISABLED:ATTEMPT: {metadata}");
                 self.state.logs.write().await.insert(
                     metadata.client_ip,
                     (
@@ -314,7 +314,7 @@ impl ProxyHttp for PingoraProxy {
                 "Auto suspend/wake up is disabled, please contact the administrator."
             }
             (true, _, _) => {
-                info!("REQ:TIMER_RESET: {metadata}");
+                info!("REQ:TRACKER_UPDATED: {metadata}");
                 let mut timer = self.state.timer.write().await;
                 *timer = Instant::now();
                 return Ok(false);
