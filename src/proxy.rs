@@ -21,7 +21,7 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, warn};
 
 pub struct PingoraProxy {
     pub blocklist_url: String,
