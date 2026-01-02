@@ -185,6 +185,7 @@ impl PingoraProxy {
             let blocked = self.is_geo_data_blocked(geo_data, server);
             if blocked {
                 warn!("BLOCKED:GEO; LOC <{geo_data}>; REQ <{metadata}>");
+                self.add_ip_to_blocklist(metadata.client_ip).await;
             } else {
                 info!("ALLOWED:GEO; LOC: <{geo_data}>; REQ <{metadata}>");
             }
@@ -214,7 +215,6 @@ impl PingoraProxy {
                 true
             }
             _ => {
-                self.add_ip_to_blocklist(metadata.client_ip).await;
                 true
             }
         }
