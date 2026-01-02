@@ -14,6 +14,7 @@ use pingora::protocols::l4::socket::SocketAddr;
 use pingora::{Error, HTTPStatus};
 use reqwest::Client;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -40,6 +41,16 @@ struct RequestMetadata {
     host: String,
     method: String,
     uri: String,
+}
+
+impl Display for RequestMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} -- {} {} {}; UA: {}",
+            self.client_ip, self.method, self.host, self.uri, self.user_agent
+        )
+    }
 }
 
 impl RequestMetadata {
@@ -270,10 +281,8 @@ impl ProxyHttp for PingoraProxy {
         };
 
         if self.is_blocked(&metadata, server).await {
-            info!("BLOCKED:REQ; {:?}", metadata);
+            info!("BLOCKED:REQ; {metadata}");
             return Ok(true);
-        } else {
-            info!("ALLOWED:REQ; {:?}", metadata);
         }
 
         let message = match (
@@ -282,35 +291,38 @@ impl ProxyHttp for PingoraProxy {
             self.state.suspended.load(Ordering::Acquire),
         ) {
             (true, true, true) => {
-                let msg = format!(
-                    "traffic detected: {} -- {} {} {}; User-Agent: {}",
-                    metadata.client_ip,
-                    metadata.method,
-                    metadata.host,
-                    metadata.uri,
-                    metadata.user_agent,
-                );
-                debug!("{msg}");
+                info!("REQ:ENABLED:RESUMING: {metadata}");
                 self.state.logs.write().await.insert(
                     metadata.client_ip,
                     (
                         OffsetDateTime::now_local().unwrap_or(OffsetDateTime::now_utc()),
-                        msg,
+                        format!("ENABLED:RESUMING: {metadata}")
                     ),
                 );
                 self.state.wake_up.store(true, Ordering::Release);
                 "The server is starting, the page will be refreshing automatically until you are redirected to immich/jellyfin. If not, try refreshing the page manually after about 10 seconds."
             }
             (true, false, true) => {
+                info!("REQ:DISABLED:ATTEMPT TO RESUME: {metadata}");
+                self.state.logs.write().await.insert(
+                    metadata.client_ip,
+                    (
+                        OffsetDateTime::now_local().unwrap_or(OffsetDateTime::now_utc()),
+                        format!("DISABLED:ATTEMPT: {metadata}")
+                    ),
+                );
                 "Auto suspend/wake up is disabled, please contact the administrator."
             }
-            (false, _, _) => return Ok(false),
-            _ => {
+            (true, _, _) => {
+                info!("REQ:TIMER_RESET: {metadata}");
                 let mut timer = self.state.timer.write().await;
                 *timer = Instant::now();
-                debug!("upstream running: timer reset");
                 return Ok(false);
             }
+            (false, _, _) => {
+                info!("REQ:NO_TRACKER: {metadata}");
+                return Ok(false)
+            },
         };
 
         let tmpl = PublicPageTemplate {

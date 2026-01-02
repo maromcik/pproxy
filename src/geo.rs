@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -69,6 +70,16 @@ pub struct GeoData {
     pub isp: String,
     pub response_message: String,
     pub response_code: String,
+}
+
+impl Display for GeoData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "IP: {}, CN: {}, CC: {}, ISP: {}",
+            self.ip, self.country_name, self.country_code2, self.isp
+        )
+    }
 }
 
 // #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
