@@ -47,7 +47,7 @@ impl Display for RequestMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} -- {} {} {}; UA: {}",
+            "{} -- {} {}{} '{}'",
             self.client_ip, self.method, self.host, self.uri, self.user_agent
         )
     }
