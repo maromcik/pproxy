@@ -139,6 +139,25 @@ impl PingoraProxy {
         !country_allowed || isp_blocked
     }
 
+    fn is_private(&self, metadata: &RequestMetadata) -> bool {
+        match metadata.client_ip {
+            IpAddr::V4(ipv4) => {
+                if ipv4.is_private() {
+                    true
+                } else {
+                    false
+                }
+            }
+            IpAddr::V6(ipv6) => {
+                if ipv6.is_unique_local() {
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
     async fn is_blocked_ip_geolocation(
         &self,
         metadata: &RequestMetadata,
@@ -150,18 +169,6 @@ impl PingoraProxy {
             return Ok(false);
         };
 
-        match metadata.client_ip {
-            IpAddr::V4(ipv4) => {
-                if ipv4.is_private() {
-                    return Ok(false);
-                }
-            }
-            IpAddr::V6(ipv6) => {
-                if ipv6.is_unique_local() {
-                    return Ok(false);
-                }
-            }
-        }
         if let Some(geo_data) = self.geo_fence.read().await.get(&metadata.client_ip) {
             debug!("geolocation cache hit: {:?}", geo_data);
             return Ok(self.is_geo_data_blocked(geo_data, server));
@@ -199,6 +206,11 @@ impl PingoraProxy {
     }
 
     async fn is_blocked(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
+        if self.is_private(metadata) {
+            debug!("private IP");
+            return false;
+        }
+
         if let Some(user_agent_blocklist) = &server.user_agent_blocklist {
             if user_agent_blocklist.iter().any(|ua| {
                 metadata
