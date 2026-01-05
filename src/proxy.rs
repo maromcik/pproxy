@@ -102,30 +102,28 @@ impl RequestMetadata {
 }
 
 impl PingoraProxy {
-    async fn add_ip_to_blocklist(&self, ip: IpAddr) {
-        if self.blocked_ips.read().await.contains(&ip) {
-            info!("BLOCKLIST:DUPLICATE: {ip} already in the blocklist");
+    async fn add_ip_to_blocklist(&self, data: &BlocklistIp) {
+        if self.blocked_ips.read().await.contains(&data.ip.ip()) {
+            info!("BLOCKLIST:DUPLICATE: {} already in the blocklist", data.ip);
             return;
         }
 
         let client = Client::new();
 
-        let body = BlocklistIp {
-            ip: IpNetwork::from(ip),
-        };
-        match client.post(&self.blocklist_url).json(&body).send().await {
+        match client.post(&self.blocklist_url).json(&data).send().await {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    info!("BLOCKLIST:ADDED; {ip}");
-                    self.blocked_ips.write().await.insert(ip);
+                    info!("BLOCKLIST:ADDED; {}", data.ip);
+                    self.blocked_ips.write().await.insert(data.ip.ip());
                 } else {
                     warn!(
-                        "BLOCKLIST:FAILED; adding IP {ip} failed with status code: {}",
+                        "BLOCKLIST:FAILED; adding IP {} failed with status code: {}",
+                        data.ip,
                         resp.status()
                     );
                 }
             }
-            Err(e) => error!("BLOCKLIST:ERROR; adding IP {ip} failed with error: {e}"),
+            Err(e) => error!("BLOCKLIST:ERROR; adding IP {} failed with error: {}", data.ip, e),
         };
     }
 
@@ -185,7 +183,13 @@ impl PingoraProxy {
             let blocked = self.is_geo_data_blocked(geo_data, server);
             if blocked {
                 warn!("BLOCKED:GEO; LOC <{geo_data}>; REQ <{metadata}>");
-                self.add_ip_to_blocklist(metadata.client_ip).await;
+                let blocklist_data = BlocklistIp {
+                    ip: IpNetwork::from(geo_data.ip),
+                    country_code: Some(geo_data.country_code2.clone()),
+                    isp: Some(geo_data.isp.clone()),
+                    user_agent: None,
+                };
+                self.add_ip_to_blocklist(&blocklist_data).await;
             } else {
                 info!("ALLOWED:GEO; LOC: <{geo_data}>; REQ <{metadata}>");
             }
@@ -202,7 +206,13 @@ impl PingoraProxy {
                     .to_lowercase()
                     .contains(ua.to_lowercase().as_str())
             }) {
-                self.add_ip_to_blocklist(metadata.client_ip).await;
+                let blocklist_data = BlocklistIp {
+                    ip: IpNetwork::from(metadata.client_ip),
+                    country_code: None,
+                    isp: None,
+                    user_agent: Some(metadata.user_agent.clone()),
+                };
+                self.add_ip_to_blocklist(&blocklist_data).await;
                 warn!("BLOCKED:UA; {metadata}");
                 return true;
             }
