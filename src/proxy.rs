@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::Instant;
 use tracing::{debug, error, warn};
 
@@ -30,9 +30,9 @@ pub struct PingoraProxy {
     pub state: Arc<ServerState>,
     pub servers: Servers,
     pub geo_fence: RwLock<HashMap<IpAddr, GeoData>>,
-    pub geo_api_lock: Mutex<()>,
+    pub geo_api_client: Mutex<Client>,
     pub blocked_ips: RwLock<HashSet<IpAddr>>,
-    pub geo_cache_writer: mpsc::Sender<GeoData>
+    pub geo_cache_writer: mpsc::Sender<GeoData>,
 }
 
 #[derive(Debug)]
@@ -124,7 +124,10 @@ impl PingoraProxy {
                     );
                 }
             }
-            Err(e) => error!("BLOCKLIST:ERROR; adding IP {} failed with error: {}", data.ip, e),
+            Err(e) => error!(
+                "BLOCKLIST:ERROR; adding IP {} failed with error: {}",
+                data.ip, e
+            ),
         };
     }
 
@@ -175,9 +178,7 @@ impl PingoraProxy {
             return Ok(self.is_geo_data_blocked(geo_data, server));
         }
         {
-            let _lock = self.geo_api_lock.lock().await;
-            let client = Client::builder().timeout(Duration::from_secs(3)).build()?;
-
+            let client = self.geo_api_client.lock().await;
             let data = client
                 .get(format!("{}{}", self.geo_api_url, metadata.client_ip))
                 .send()
@@ -238,9 +239,7 @@ impl PingoraProxy {
                 error!("{e}");
                 true
             }
-            _ => {
-                true
-            }
+            _ => true,
         }
     }
 }
@@ -320,7 +319,7 @@ impl ProxyHttp for PingoraProxy {
                     metadata.client_ip,
                     (
                         OffsetDateTime::now_local().unwrap_or(OffsetDateTime::now_utc()),
-                        format!("ENABLED:RESUMING: {metadata}")
+                        format!("ENABLED:RESUMING: {metadata}"),
                     ),
                 );
                 self.state.wake_up.store(true, Ordering::Release);
@@ -332,7 +331,7 @@ impl ProxyHttp for PingoraProxy {
                     metadata.client_ip,
                     (
                         OffsetDateTime::now_local().unwrap_or(OffsetDateTime::now_utc()),
-                        format!("DISABLED:ATTEMPT: {metadata}")
+                        format!("DISABLED:ATTEMPT: {metadata}"),
                     ),
                 );
                 "Auto suspend/wake up is disabled, please contact the administrator."
@@ -345,8 +344,8 @@ impl ProxyHttp for PingoraProxy {
             }
             (false, _, _) => {
                 info!("REQ:NO_TRACKER: {metadata}");
-                return Ok(false)
-            },
+                return Ok(false);
+            }
         };
 
         let tmpl = PublicPageTemplate {

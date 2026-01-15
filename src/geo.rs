@@ -1,12 +1,12 @@
-use std::collections::HashMap;
+use crate::error::AppError;
 use serde::{Deserialize, Serialize};
+use serde_json::from_str;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::net::IpAddr;
-use serde_json::from_str;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tracing::warn;
-use crate::error::AppError;
 // #[derive(Debug, Clone, Copy)]
 // pub enum CountryCode {
 //     Sk,
@@ -120,7 +120,7 @@ impl GeoData {
         let reader = BufReader::new(file);
         let mut lines = reader.lines();
         let mut results: HashMap<IpAddr, GeoData> = HashMap::new();
-        
+
         while let Some(line) = lines.next_line().await? {
             let data: GeoData = from_str(&line)?;
             results.insert(data.ip, data);
