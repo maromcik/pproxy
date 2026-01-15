@@ -185,11 +185,8 @@ impl PingoraProxy {
                 .json::<GeoData>()
                 .await
                 .map_err(|e| AppError::ParseError(format!("{e}")))?;
-            if let Err(e) = self.geo_cache_writer.send(data.clone()).await {
-                warn!("could not send GeoData: {data}; {e}")
-            }
             let mut fence = self.geo_fence.write().await;
-            let geo_data = fence.entry(metadata.client_ip).or_insert(data);
+            let geo_data = fence.entry(metadata.client_ip).or_insert(data.clone());
             let blocked = self.is_geo_data_blocked(geo_data, server);
             if blocked {
                 warn!("BLOCKED:GEO; LOC <{geo_data}>; REQ <{metadata}>");
@@ -203,7 +200,9 @@ impl PingoraProxy {
             } else {
                 info!("ALLOWED:GEO; LOC: <{geo_data}>; REQ <{metadata}>");
             }
-
+            if let Err(e) = self.geo_cache_writer.send(data.clone()).await {
+                warn!("could not send GeoData: {data}; {e}")
+            }
             Ok(blocked)
         }
     }
