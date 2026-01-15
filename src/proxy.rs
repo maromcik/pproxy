@@ -162,50 +162,64 @@ impl PingoraProxy {
         }
     }
 
+    async fn check_geo_cache(
+        &self,
+        metadata: &RequestMetadata,
+        server_config: &ServerConfig,
+    ) -> Option<bool> {
+        if let Some(geo_data) = self.geo_fence.read().await.get(&metadata.client_ip) {
+            debug!("geolocation cache hit: {:?}", geo_data);
+            return Some(self.is_geo_data_blocked(geo_data, server_config));
+        }
+        None
+    }
+
     async fn is_blocked_ip_geolocation(
         &self,
         metadata: &RequestMetadata,
-        server: &ServerConfig,
+        server_config: &ServerConfig,
     ) -> Result<bool, AppError> {
-        if server.geo_fence_isp_blocklist.is_none() && server.geo_fence_country_allowlist.is_none()
+        if server_config.geo_fence_isp_blocklist.is_none()
+            && server_config.geo_fence_country_allowlist.is_none()
         {
             debug!("empty geo fence allowlist");
             return Ok(false);
         };
 
-        if let Some(geo_data) = self.geo_fence.read().await.get(&metadata.client_ip) {
-            debug!("geolocation cache hit: {:?}", geo_data);
-            return Ok(self.is_geo_data_blocked(geo_data, server));
+        if let Some(blocked) = self.check_geo_cache(metadata, server_config).await {
+            return Ok(blocked);
         }
-        {
-            let client = self.geo_api_client.lock().await;
-            let data = client
-                .get(format!("{}{}", self.geo_api_url, metadata.client_ip))
-                .send()
-                .await?
-                .json::<GeoData>()
-                .await
-                .map_err(|e| AppError::ParseError(format!("{e}")))?;
-            let mut fence = self.geo_fence.write().await;
-            let geo_data = fence.entry(metadata.client_ip).or_insert(data.clone());
-            let blocked = self.is_geo_data_blocked(geo_data, server);
-            if blocked {
-                warn!("BLOCKED:GEO; LOC <{geo_data}>; REQ <{metadata}>");
-                let blocklist_data = BlocklistIp {
-                    ip: IpNetwork::from(geo_data.ip),
-                    country_code: Some(geo_data.country_code2.clone()),
-                    isp: Some(geo_data.isp.clone()),
-                    user_agent: None,
-                };
-                self.add_ip_to_blocklist(&blocklist_data).await;
-            } else {
-                info!("ALLOWED:GEO; LOC: <{geo_data}>; REQ <{metadata}>");
-            }
-            if let Err(e) = self.geo_cache_writer.send(data.clone()).await {
-                warn!("could not send GeoData: {data}; {e}")
-            }
-            Ok(blocked)
+
+        let client = self.geo_api_client.lock().await;
+        if let Some(blocked) = self.check_geo_cache(metadata, server_config).await {
+            return Ok(blocked);
         }
+        let data = client
+            .get(format!("{}{}", self.geo_api_url, metadata.client_ip))
+            .send()
+            .await?
+            .json::<GeoData>()
+            .await
+            .map_err(|e| AppError::ParseError(format!("{e}")))?;
+        let mut fence = self.geo_fence.write().await;
+        let geo_data = fence.entry(metadata.client_ip).or_insert(data.clone());
+        let blocked = self.is_geo_data_blocked(geo_data, server_config);
+        if blocked {
+            warn!("BLOCKED:GEO; LOC <{geo_data}>; REQ <{metadata}>");
+            let blocklist_data = BlocklistIp {
+                ip: IpNetwork::from(geo_data.ip),
+                country_code: Some(geo_data.country_code2.clone()),
+                isp: Some(geo_data.isp.clone()),
+                user_agent: None,
+            };
+            self.add_ip_to_blocklist(&blocklist_data).await;
+        } else {
+            info!("ALLOWED:GEO; LOC: <{geo_data}>; REQ <{metadata}>");
+        }
+        if let Err(e) = self.geo_cache_writer.send(data.clone()).await {
+            warn!("could not send GeoData: {data}; {e}")
+        }
+        Ok(blocked)
     }
 
     async fn is_blocked(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
