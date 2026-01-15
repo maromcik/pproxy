@@ -9,7 +9,7 @@ fn default_info<'a>() -> String {
     String::from("info")
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ServerConfig {
     pub upstream: String,
     #[serde(default)]
@@ -39,7 +39,7 @@ pub struct ServerConfig {
 //     Ok(Some(lowered))
 // }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CommandConfig {
     pub check_command: String,
     pub wake_command: String,
@@ -48,7 +48,7 @@ pub struct CommandConfig {
     pub status_command: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub listen_host: String,
     pub listen_control_host: String,

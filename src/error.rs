@@ -12,6 +12,8 @@ pub enum AppError {
     ConfigError(String),
     #[error("request error: {0}")]
     RequestError(String),
+    #[error("task/join error: {0}")]
+    TaskError(String),
     #[error("I/O error: {0}")]
     IOError(String),
     #[error("serialize/deserialize error: {0}")]
@@ -51,5 +53,11 @@ impl From<std::io::Error> for AppError {
 impl From<serde_json::Error> for AppError {
     fn from(e: serde_json::Error) -> Self {
         Self::SerdeError(e.to_string())
+    }
+}
+
+impl From<tokio::task::JoinError> for AppError {
+    fn from(e: tokio::task::JoinError) -> Self {
+        Self::TaskError(e.to_string())
     }
 }

@@ -24,7 +24,7 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::Instant;
 use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
-use crate::geo::GeoData;
+use crate::geo::{GeoData, GeoWriter};
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -56,22 +56,7 @@ pub struct ServerState {
     pub logs: RwLock<HashMap<IpAddr, (OffsetDateTime, String)>>,
 }
 
-fn main() -> Result<(), AppError> {
-    let cli = Cli::parse();
-
-    let config = AppConfig::parse_config(&cli.config)?;
-    let env = EnvFilter::new(
-        format!("pproxy={},{}", config.app_log_level, config.all_log_level).as_str(),
-    );
-    let timer = tracing_subscriber::fmt::time::LocalTime::rfc_3339();
-    tracing_subscriber::fmt()
-        .with_timer(timer)
-        .with_target(true)
-        .with_env_filter(env)
-        .init();
-
-    debug!("Using config: {:?}", &config);
-
+fn init_pingora(config: AppConfig, geo_writer: mpsc::Sender<GeoData>, geo_cache_data: HashMap<IpAddr, GeoData>) {
     let conf = ServerConf {
         version: 1,
         client_bind_to_ipv4: vec![],
@@ -99,6 +84,8 @@ fn main() -> Result<(), AppError> {
     info!("Server conf: {:?}", server.configuration);
     server.bootstrap();
 
+
+
     let state = Arc::new(ServerState {
         timer: Instant::now().into(),
         suspended: AtomicBool::new(false),
@@ -111,7 +98,7 @@ fn main() -> Result<(), AppError> {
             active_time: Duration::from_secs(0),
             suspended_time: Duration::from_secs(0),
         }
-        .into(),
+            .into(),
         logs: HashMap::new().into(),
     });
 
@@ -129,8 +116,7 @@ fn main() -> Result<(), AppError> {
         },
     );
 
-    // let get_cache_data = GeoData::load_geo_data(config.geo_cache_file_path.as_str())?;
-    let (geo_writer, geo_receiver) = mpsc::channel(1000);
+
 
     let mut proxy_service = http_proxy_service(
         &server.configuration,
@@ -139,7 +125,7 @@ fn main() -> Result<(), AppError> {
             geo_api_url: config.geo_api_url,
             state,
             servers: config.servers,
-            geo_fence: RwLock::new(HashMap::new()),
+            geo_fence: RwLock::new(geo_cache_data),
             geo_api_lock: Mutex::new(()),
             blocked_ips: RwLock::new(HashSet::new()),
             geo_cache_writer: geo_writer,
@@ -153,4 +139,31 @@ fn main() -> Result<(), AppError> {
     server.add_service(control_service);
     info!("Server starting");
     server.run_forever();
+}
+
+#[tokio::main]
+async fn main() -> Result<(), AppError> {
+    let cli = Cli::parse();
+
+    let config = AppConfig::parse_config(&cli.config)?;
+    let env = EnvFilter::new(
+        format!("pproxy={},{}", config.app_log_level, config.all_log_level).as_str(),
+    );
+    let timer = tracing_subscriber::fmt::time::LocalTime::rfc_3339();
+    tracing_subscriber::fmt()
+        .with_timer(timer)
+        .with_target(true)
+        .with_env_filter(env)
+        .init();
+
+
+    let get_cache_data = GeoData::load_geo_data(config.geo_cache_file_path.as_str()).await.unwrap_or(HashMap::new());
+    let (geo_writer, geo_receiver) = mpsc::channel(1000);
+    debug!("Using config: {:?}", &config);
+    let local_config = config.clone();
+    let writer = GeoWriter::open(&config.geo_cache_file_path, geo_receiver).await?;
+    writer.run().await;
+    tokio::task::spawn_blocking(move || {init_pingora(local_config, geo_writer, get_cache_data); }).await?;
+    Ok(())
+
 }
