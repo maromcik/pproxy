@@ -20,10 +20,11 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::Instant;
 use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
+use crate::geo::GeoData;
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -128,6 +129,9 @@ fn main() -> Result<(), AppError> {
         },
     );
 
+    // let get_cache_data = GeoData::load_geo_data(config.geo_cache_file_path.as_str())?;
+    let (geo_writer, geo_receiver) = mpsc::channel(1000);
+
     let mut proxy_service = http_proxy_service(
         &server.configuration,
         PingoraProxy {
@@ -138,6 +142,7 @@ fn main() -> Result<(), AppError> {
             geo_fence: RwLock::new(HashMap::new()),
             geo_api_lock: Mutex::new(()),
             blocked_ips: RwLock::new(HashSet::new()),
+            geo_cache_writer: geo_writer,
         },
     );
     //

@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::Instant;
 use tracing::{debug, error, warn};
 
@@ -32,6 +32,7 @@ pub struct PingoraProxy {
     pub geo_fence: RwLock<HashMap<IpAddr, GeoData>>,
     pub geo_api_lock: Mutex<()>,
     pub blocked_ips: RwLock<HashSet<IpAddr>>,
+    pub geo_cache_writer: mpsc::Sender<GeoData>
 }
 
 #[derive(Debug)]
@@ -184,7 +185,9 @@ impl PingoraProxy {
                 .json::<GeoData>()
                 .await
                 .map_err(|e| AppError::ParseError(format!("{e}")))?;
-
+            if let Err(e) = self.geo_cache_writer.send(data.clone()).await {
+                warn!("could not send GeoData: {data}; {e}")
+            }
             let mut fence = self.geo_fence.write().await;
             let geo_data = fence.entry(metadata.client_ip).or_insert(data);
             let blocked = self.is_geo_data_blocked(geo_data, server);

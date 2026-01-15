@@ -12,8 +12,10 @@ pub enum AppError {
     ConfigError(String),
     #[error("request error: {0}")]
     RequestError(String),
-    // #[error("server error: {0}")]
-    // ServerError(String),
+    #[error("I/O error: {0}")]
+    IOError(String),
+    #[error("serialize/deserialize error: {0}")]
+    SerdeError(String),
 }
 
 impl Debug for AppError {
@@ -37,5 +39,17 @@ impl From<reqwest::Error> for AppError {
 impl From<config::ConfigError> for AppError {
     fn from(e: config::ConfigError) -> Self {
         Self::ConfigError(e.to_string())
+    }
+}
+
+impl From<std::io::Error> for AppError {
+    fn from(e: std::io::Error) -> Self {
+        Self::IOError(e.to_string())
+    }
+}
+
+impl From<serde_json::Error> for AppError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::SerdeError(e.to_string())
     }
 }

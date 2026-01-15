@@ -1,7 +1,12 @@
-use std::fmt::Display;
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use std::net::IpAddr;
-
+use serde_json::from_str;
+use tokio::fs::{File, OpenOptions};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tracing::warn;
+use crate::error::AppError;
 // #[derive(Debug, Clone, Copy)]
 // pub enum CountryCode {
 //     Sk,
@@ -60,7 +65,44 @@ use std::net::IpAddr;
 //     }
 // }
 
-#[derive(Serialize, Deserialize, Debug)]
+pub struct GeoWriter {
+    file: tokio::fs::File,
+    rx: tokio::sync::mpsc::Receiver<GeoData>,
+}
+
+impl GeoWriter {
+    pub async fn open(
+        path: &str,
+        rx: tokio::sync::mpsc::Receiver<GeoData>,
+    ) -> Result<Self, std::io::Error> {
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .await?;
+        Ok(Self { file, rx })
+    }
+
+    pub async fn run(mut self) {
+        tokio::spawn(async move {
+            while let Some(data) = self.rx.recv().await {
+                let mut json = match serde_json::to_string(&data) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        warn!("could not serialize: {data}; {e}");
+                        continue;
+                    }
+                };
+                json = json + "\n";
+                if let Err(e) = self.file.write_all(json.as_bytes()).await {
+                    warn!("could not write to file: {e}");
+                }
+            }
+        });
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GeoData {
     pub ip: IpAddr,
     pub country_name: String,
@@ -70,6 +112,21 @@ pub struct GeoData {
     pub isp: String,
     pub response_message: String,
     pub response_code: String,
+}
+
+impl GeoData {
+    pub async fn load_geo_data(path: &str) -> Result<HashMap<IpAddr, GeoData>, AppError> {
+        let file = File::open(path).await?;
+        let reader = BufReader::new(file);
+        let mut lines = reader.lines();
+        let mut results: HashMap<IpAddr, GeoData> = HashMap::new();
+        
+        while let Some(line) = lines.next_line().await? {
+            let data: GeoData = from_str(&line)?;
+            results.insert(data.ip, data);
+        }
+        Ok(results)
+    }
 }
 
 impl Display for GeoData {
