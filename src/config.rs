@@ -56,7 +56,7 @@ pub struct AppConfig {
     pub servers: Servers,
     pub commands: CommandConfig,
     pub suspend_timeout: u64,
-    pub blocklist_url: String,
+    pub blocklist_url: Option<String>,
     pub geo_api_url: String,
     pub geo_cache_file_path: String,
     #[serde(default = "default_info")]

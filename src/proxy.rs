@@ -22,10 +22,10 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::Instant;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, trace, warn};
 
 pub struct PingoraProxy {
-    pub blocklist_url: String,
+    pub blocklist_url: Option<String>,
     pub geo_api_url: String,
     pub state: Arc<ServerState>,
     pub servers: Servers,
@@ -104,6 +104,11 @@ impl RequestMetadata {
 
 impl PingoraProxy {
     async fn add_ip_to_blocklist(&self, data: &BlocklistIp) {
+        let Some(blocklist_url) = &self.blocklist_url else {
+            trace!("Blocklist disabled");
+            return;
+        };
+
         if self.blocked_ips.read().await.contains(&data.ip.ip()) {
             info!("BLOCKLIST:DUPLICATE: {} already in the blocklist", data.ip);
             return;
@@ -111,7 +116,7 @@ impl PingoraProxy {
 
         let client = Client::new();
 
-        match client.post(&self.blocklist_url).json(&data).send().await {
+        match client.post(blocklist_url).json(&data).send().await {
             Ok(resp) => {
                 if resp.status().is_success() {
                     info!("BLOCKLIST:ADDED; {}", data.ip);
