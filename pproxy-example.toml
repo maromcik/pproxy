@@ -1,28 +1,49 @@
-listen_host = "0.0.0.0:8050"
-listen_control_host = "0.0.0.0:5050"
-suspend_timeout = 300
+app_log_level = "debug"
+all_log_level = "error"
+
+[control]
+listen = "0.0.0.0:5050"
+
+[waf]
+geo_cache_file_path = "cache"
 blocklist_url = "http://192.168.0.5:6060/blocklist"
 geo_api_url = "https://api.iplocation.net?ip="
-app_log_level = "info"
-all_log_level = "info"
 
+[monitors.hp]
+suspend_timeout = 30
 
-[commands]
+[monitors.hp.commands]
 check_command = "ping -W 0.3 -c 1 192.168.0.10"
 wake_command = "ether-wake -i ens1 21:11:21:11:21:11"
-suspend_command = "ssh -o ConnectTimeout=1 root@192.168.0.10 systemctl suspend"
-status_command = "ssh -o ConnectTimeout=1 root@192.168.0.10 sh -c /root/sus-save.sh"
+suspend_command = "ssh -o ConnectTimeout=1 root@192.168.0.32 systemctl suspend"
+status_command = "ssh -o ConnectTimeout=1 root@192.168.0.32 sh -c /root/sus-save.sh"
 
-[servers]
+[monitors.test]
+suspend_timeout = 30
 
-[servers."s1.example.com"]
-    upstream = "192.168.1.10"
-    suspending = true
-    user_agent_blocklist = ["scapy","cypex"]
-    geo_fence_allowlist = ["de", "gb"]
+[monitors.test.commands]
+check_command = "ping -W 0.3 -c 1 192.168.0.32"
+wake_command = "echo pes"
+suspend_command = "ssh -o ConnectTimeout=1 root@192.168.0.32 systemctl suspend"
+status_command = "ssh -o ConnectTimeout=1 root@192.168.0.32 sh -c /root/sus-save.sh"
 
-[servers."s2.example.com"]
-    upstream = "192.168.1.11"
-    suspending = false
-    user_agent_blocklist = ["facebook","scapy","cypex","scanning"]
-    geo_fence_allowlist = ["de", "gb"]
+
+[hosts."0.0.0.0:443"]
+tls = true
+
+[hosts."0.0.0.0:443".servers."example.server.com"]
+upstream = "192.168.0.10:8000"
+user_agent_blocklist = ["cypex","scanning"]
+geo_fence_country_allowlist = ["uk", "de"]
+cert_path = "hafka.eu/cert.pem"
+key_path = "hafka.eu/privkey.pem"
+monitor = "test"
+
+[hosts."0.0.0.0:80"]
+tls = false
+
+[hosts."0.0.0.0:80".servers."second.server.eu"]
+upstream = "192.168.0.32:8002"
+user_agent_blocklist = ["facebook"]
+
+

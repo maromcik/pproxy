@@ -62,7 +62,7 @@ impl TlsAccept for TlsSelector {
             warn!("No certificate found for SNI: {}", sni_provided);
             return;
         };
-        
+
         if let Err(e) = tls::ext::ssl_use_certificate(ssl, cert) {
             error!("Could not set certificate: {}", e);
         }
