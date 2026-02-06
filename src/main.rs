@@ -60,10 +60,10 @@ fn init_pingora(
     };
 
     let mut server = Server::new_with_opt_and_conf(None, conf);
-    info!("Server conf: {:?}", server.configuration);
+    info!("Pingora Config: {:#?}", server.configuration);
     server.bootstrap();
-
     info!("Bootstrap done");
+    info!("PProxy Config: {:#?}", config);
 
     let client = Client::builder().timeout(Duration::from_secs(3)).build()?;
 
