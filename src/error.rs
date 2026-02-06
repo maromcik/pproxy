@@ -26,6 +26,8 @@ pub enum AppError {
     TlsError(String),
     #[error("templating error: {0}")]
     TemplatingError(String),
+    #[error("pingora error: {0}")]
+    PingoraError(String),
 }
 
 impl Debug for AppError {
@@ -79,6 +81,12 @@ impl From<pingora::tls::error::ErrorStack> for AppError {
 impl From<askama::Error> for AppError {
     fn from(error: askama::Error) -> Self {
         Self::TemplatingError(error.to_string())
+    }
+}
+
+impl From<pingora::BError> for AppError {
+    fn from(e: pingora::BError) -> Self {
+        Self::PingoraError(e.to_string())
     }
 }
 

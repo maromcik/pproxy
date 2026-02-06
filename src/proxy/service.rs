@@ -53,11 +53,22 @@ impl TlsSelector {
 #[async_trait]
 impl TlsAccept for TlsSelector {
     async fn certificate_callback(&self, ssl: &mut TlsRef) -> () {
-        let sni_provided = ssl.servername(ssl::NameType::HOST_NAME).unwrap();
+        let Some(sni_provided) = ssl.servername(ssl::NameType::HOST_NAME) else {
+            warn!("No SNI provided");
+            return;
+        };
         debug!("SNI provided: {}", sni_provided);
-        let (cert, key) = self.0.get(&sni_provided.to_string()).unwrap();
-        tls::ext::ssl_use_certificate(ssl, cert).unwrap();
-        tls::ext::ssl_use_private_key(ssl, key).unwrap();
+        let Some((cert, key)) = self.0.get(&sni_provided.to_string()) else {
+            warn!("No certificate found for SNI: {}", sni_provided);
+            return;
+        };
+        
+        if let Err(e) = tls::ext::ssl_use_certificate(ssl, cert) {
+            error!("Could not set certificate: {}", e);
+        }
+        if let Err(e) = tls::ext::ssl_use_private_key(ssl, key) {
+            error!("Could not set private key: {}", e);
+        }
     }
 }
 
@@ -95,18 +106,18 @@ impl PingoraService {
         server_conf: Arc<ServerConf>,
         host: String,
         tls: bool,
-    ) -> impl pingora::services::Service {
-        let selector = Box::new(TlsSelector::new(self.servers.clone()).unwrap());
+    ) -> Result<impl pingora::services::Service, AppError> {
+        let selector = Box::new(TlsSelector::new(self.servers.clone())?);
         let mut service = http_proxy_service(&server_conf.clone(), self);
 
         if tls {
-            let tls_settings = TlsSettings::with_callbacks(selector.clone()).unwrap();
+            let tls_settings = TlsSettings::with_callbacks(selector.clone())?;
             service.add_tls_with_settings(host.as_str(), None, tls_settings);
         } else {
             service.add_tcp(host.as_str())
         }
 
-        service
+        Ok(service)
     }
 }
 

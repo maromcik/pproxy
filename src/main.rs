@@ -76,7 +76,7 @@ fn init_pingora(
             client.clone(),
             config.waf.clone(),
         );
-        let service = pproxy.build_service(server.configuration.clone(), addr, tls);
+        let service = pproxy.build_service(server.configuration.clone(), addr, tls)?;
         server.add_service(service);
     }
 
