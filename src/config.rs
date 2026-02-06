@@ -13,6 +13,12 @@ fn default_info<'a>() -> String {
 pub struct ServerConfig {
     pub upstream: String,
     #[serde(default)]
+    pub upstream_tls: bool,
+    #[serde(default)]
+    pub cert_path: Option<String>,
+    #[serde(default)]
+    pub key_path: Option<String>,
+    #[serde(default)]
     pub suspending: bool,
     #[serde(default)]
     pub user_agent_blocklist: Option<HashSet<String>>,
@@ -20,24 +26,22 @@ pub struct ServerConfig {
     pub geo_fence_country_allowlist: Option<HashSet<String>>,
     #[serde(default)]
     pub geo_fence_isp_blocklist: Option<HashSet<String>>,
+    #[serde(default)]
+    pub monitor: Option<String>,
 }
 
-// fn lowercase_fence_geo_allowlist<'de, D>(
-//     deserializer: D,
-// ) -> Result<Option<HashSet<String>>, D::Error>
-// where
-//     D: Deserializer<'de>,
-// {
-//     let opt = Option::<HashSet<String>>::deserialize(deserializer)?;
-//
-//     let Some(set) = opt else {
-//         return Ok(None);
-//     };
-//
-//     let lowered = set.into_iter().map(|s| s.to_lowercase()).collect();
-//
-//     Ok(Some(lowered))
-// }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HostConfig {
+    pub tls: bool,
+    pub servers: Servers,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MonitorConfig {
+    pub suspend_timeout: u64,
+    pub commands: CommandConfig
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CommandConfig {
@@ -49,16 +53,30 @@ pub struct CommandConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AppConfig {
-    pub listen_host: String,
-    pub listen_control_host: String,
+pub struct WafConfig {
     #[serde(default)]
-    pub servers: Servers,
-    pub commands: CommandConfig,
-    pub suspend_timeout: u64,
     pub blocklist_url: Option<String>,
+    #[serde(default)]
     pub geo_api_url: String,
+    #[serde(default)]
     pub geo_cache_file_path: String,
+}
+
+
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AppConfig {
+    pub listen_control: String,
+    
+    #[serde(default)]
+    pub hosts: HashMap<String, HostConfig>,
+    
+    #[serde(default)]
+    pub monitors: HashMap<String, MonitorConfig>,
+    
+    // #[serde(default)]
+    pub waf: WafConfig,
+    
     #[serde(default = "default_info")]
     pub app_log_level: String,
     #[serde(default = "default_info")]

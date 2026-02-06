@@ -18,6 +18,8 @@ pub enum AppError {
     IOError(String),
     #[error("serialize/deserialize error: {0}")]
     SerdeError(String),
+    #[error("tls error: {0}")]
+    TlsError(String),
 }
 
 impl Debug for AppError {
@@ -59,5 +61,11 @@ impl From<serde_json::Error> for AppError {
 impl From<tokio::task::JoinError> for AppError {
     fn from(e: tokio::task::JoinError) -> Self {
         Self::TaskError(e.to_string())
+    }
+}
+
+impl From<pingora::tls::error::ErrorStack> for AppError {
+    fn from(e: pingora::tls::error::ErrorStack) -> Self {
+        Self::TlsError(e.to_string())
     }
 }

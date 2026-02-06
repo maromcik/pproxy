@@ -1,4 +1,5 @@
-use crate::ServerState;
+use std::collections::HashMap;
+use std::net::IpAddr;
 use crate::templates::ControlPageTemplate;
 use crate::utils::call_script;
 use askama::Template;
@@ -10,13 +11,50 @@ use pingora::prelude::*;
 use pingora::server::{ListenFds, ShutdownWatch};
 use pingora::services::Service;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use time::OffsetDateTime;
+use tokio::sync::RwLock;
 use tokio::time::Instant;
 use tracing::{debug, trace};
+use crate::config::CommandConfig;
+
+#[derive(Default, Clone)]
+pub struct TimeMonitoring {
+    pub active_time: Duration,
+    pub suspended_time: Duration,
+}
+
+pub struct MonitorState {
+    pub timer: RwLock<Instant>,
+    pub suspended: AtomicBool,
+    pub limit: Duration,
+    pub wake_up: AtomicBool,
+    pub suspending: AtomicBool,
+    pub auto_suspend_enabled: AtomicBool,
+    pub commands: CommandConfig,
+    pub time_monitoring: RwLock<TimeMonitoring>,
+    pub logs: RwLock<HashMap<IpAddr, (OffsetDateTime, String)>>,
+}
+
+impl MonitorState {
+    pub fn new(limit: Duration, commands: CommandConfig) -> Arc<Self> {
+        Arc::new(Self {
+            timer: Instant::now().into(),
+            suspended: Default::default(),
+            limit,
+            wake_up: Default::default(),
+            suspending: Default::default(),
+            auto_suspend_enabled: Default::default(),
+            commands,
+            time_monitoring: Default::default(),
+            logs: Default::default(),
+        })
+    }
+}
 
 pub struct ControlService {
-    pub state: Arc<ServerState>,
+    pub state: Arc<MonitorState>,
 }
 
 #[async_trait]
@@ -142,7 +180,7 @@ impl ProxyHttp for ControlService {
 }
 
 pub struct MonitorService {
-    pub state: Arc<ServerState>,
+    pub state: Arc<MonitorState>,
 }
 
 #[async_trait]

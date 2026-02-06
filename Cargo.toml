@@ -4,20 +4,20 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-pingora = { version = "0.6.0", features = ["lb", "default", "rustls", "proxy", "openssl", "boringssl"] }
+pingora = { version = "0.7.0", features = ["lb", "default", "openssl", "proxy"] }
 async-trait = "0.1.89"
-log = "0.4.28"
-tokio = { version = "1.48.0", features = ["full"]}
-clap = {version = "4.5.53", features = ["env", "default", "derive"]}
+log = "0.4.29"
+tokio = { version = "1.49.0", features = ["full"]}
+clap = {version = "4.5.57", features = ["env", "default", "derive"]}
 dotenvy = "0.15.7"
-tracing = { version = "0.1.43", features = ["async-await"]}
+tracing = { version = "0.1.44", features = ["async-await"]}
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "local-time", "time"] }
-thiserror = "2.0.17"
-askama = "0.14.0"
+thiserror = "2.0.18"
+askama = "0.15.4"
 serde = { version = "1.0.228", features = ["derive"] }
-time = "0.3.44"
+time = "0.3.46"
 itertools = "0.14.0"
-reqwest = { version = "0.12.24", features = ["json"] }
+reqwest = { version = "0.13.1", features = ["json"] }
 ipnetwork = {version = "0.21.1", features = ["default", "serde"]}
 config = "0.15.19"
 num_cpus = "1.17.0"

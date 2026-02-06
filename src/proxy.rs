@@ -1,38 +1,110 @@
-use crate::ServerState;
-use crate::blocklist::BlocklistIp;
-use crate::config::{ServerConfig, Servers};
-use crate::error::AppError;
-use crate::geo::GeoData;
-use crate::templates::PublicPageTemplate;
-use askama::Template;
-use async_trait::async_trait;
-use ipnetwork::IpNetwork;
-use log::info;
-use pingora::http::ResponseHeader;
-use pingora::prelude::{HttpPeer, ProxyHttp, Session};
-use pingora::protocols::l4::socket::SocketAddr;
-use pingora::{Error, HTTPStatus};
-use reqwest::Client;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use askama::Template;
+use async_trait::async_trait;
+use ipnetwork::IpNetwork;
+use log::info;
+use pingora::listeners::TlsAccept;
+use pingora::prelude::{http_proxy_service, HttpPeer, ProxyHttp, Session};
+use pingora::protocols::l4::socket::SocketAddr;
+use pingora::protocols::tls::TlsRef;
+use pingora::server::configuration::ServerConf;
+use pingora::{tls, Error, HTTPStatus};
+use pingora::http::ResponseHeader;
+use pingora::listeners::tls::TlsSettings;
+use pingora::tls::ssl;
+use reqwest::Client;
 use time::OffsetDateTime;
-use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::Instant;
 use tracing::{debug, error, trace, warn};
+use crate::blocklist::BlocklistIp;
+use crate::config::{ServerConfig, Servers, WafConfig};
+use crate::error::AppError;
+use crate::geo::GeoData;
+use crate::management::MonitorState;
+use crate::templates::PublicPageTemplate;
 
-pub struct PingoraProxy {
-    pub blocklist_url: Option<String>,
-    pub geo_api_url: String,
-    pub state: Arc<ServerState>,
+
+#[derive(Debug, Clone)]
+pub struct TlsSelector(HashMap<String, (tls::x509::X509, tls::pkey::PKey<tls::pkey::Private>)>);
+
+impl TlsSelector {
+    pub fn new (servers: Servers) -> Result<Self, AppError> {
+        let mut res = HashMap::new();
+        for (sni, server) in servers.iter() {
+
+            if let (Some(cert), Some(key)) = (server.cert_path.as_ref(), server.key_path.as_ref()) {
+                let cert_bytes = std::fs::read(cert)?;
+                let cert = tls::x509::X509::from_pem(&cert_bytes)?;
+
+                let key_bytes = std::fs::read(key)?;
+                let key = tls::pkey::PKey::private_key_from_pem(&key_bytes)?;
+                res.insert(sni.clone(), (cert, key));
+            }
+
+        }
+
+        Ok(Self(res))
+    }
+}
+
+#[async_trait]
+impl TlsAccept for TlsSelector {
+    async fn certificate_callback(&self, ssl: &mut TlsRef) -> () {
+        let sni_provided = ssl.servername(ssl::NameType::HOST_NAME).unwrap();
+        debug!("SNI provided: {}", sni_provided);
+        let (cert, key) = self.0.get(&sni_provided.to_string()).unwrap();
+        tls::ext::ssl_use_certificate(ssl, cert).unwrap();
+        tls::ext::ssl_use_private_key(ssl, key).unwrap();
+    }
+
+}
+
+pub struct PProxy {
+    pub state: Arc<MonitorState>,
     pub servers: Servers,
+    pub waf_config: WafConfig,
     pub geo_fence: RwLock<HashMap<IpAddr, GeoData>>,
     pub geo_api_client: Mutex<Client>,
     pub blocked_ips: RwLock<HashSet<IpAddr>>,
     pub geo_cache_writer: mpsc::Sender<GeoData>,
+}
+
+impl PProxy {
+    pub fn new(state: Arc<MonitorState>, servers: Servers, geo_cache_writer: mpsc::Sender<GeoData>, geo_cache_data: HashMap<IpAddr, GeoData>, client: Client, waf_config: WafConfig) -> Self {
+        Self {
+            state,
+            servers,
+            waf_config,
+            geo_fence: RwLock::new(geo_cache_data),
+            geo_api_client: Mutex::new(client),
+            blocked_ips: RwLock::new(HashSet::new()),
+            geo_cache_writer,
+        }
+    }
+    pub fn build_service(self, server_conf: Arc<ServerConf>, host: String, tls: bool) -> impl pingora::services::Service  {
+        let selector = Box::new(TlsSelector::new(self.servers.clone()).unwrap());
+        let mut service = http_proxy_service(
+            &server_conf.clone(),
+            self
+        );
+
+
+
+        if tls {
+            let tls_settings = TlsSettings::with_callbacks(selector.clone()).unwrap();
+            service.add_tls_with_settings(host.as_str(), None, tls_settings);
+        } else {
+            service.add_tcp(host.as_str())
+        }
+
+        service
+    }
 }
 
 #[derive(Debug)]
@@ -102,9 +174,9 @@ impl RequestMetadata {
     }
 }
 
-impl PingoraProxy {
+impl PProxy {
     async fn add_ip_to_blocklist(&self, data: &BlocklistIp) {
-        let Some(blocklist_url) = &self.blocklist_url else {
+        let Some(blocklist_url) = &self.waf_config.blocklist_url else {
             trace!("Blocklist disabled");
             return;
         };
@@ -200,7 +272,7 @@ impl PingoraProxy {
             return Ok(blocked);
         }
         let data = client
-            .get(format!("{}{}", self.geo_api_url, metadata.client_ip))
+            .get(format!("{}{}", self.waf_config.geo_api_url, metadata.client_ip))
             .send()
             .await?
             .json::<GeoData>()
@@ -264,7 +336,7 @@ impl PingoraProxy {
 }
 
 #[async_trait]
-impl ProxyHttp for PingoraProxy {
+impl ProxyHttp for PProxy {
     type CTX = ();
 
     fn new_ctx(&self) -> Self::CTX {
@@ -288,7 +360,7 @@ impl ProxyHttp for PingoraProxy {
             if let Some(server_config) = self.servers.get(host.to_str().unwrap_or_default()) {
                 Box::new(HttpPeer::new(
                     &server_config.upstream,
-                    false,
+                    server_config.upstream_tls,
                     "".to_string(),
                 ))
             } else {
