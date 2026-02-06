@@ -1,3 +1,7 @@
+use crate::management::templates::templates::GenericError;
+use askama::Template;
+use axum::http::StatusCode;
+use axum::response::{Html, IntoResponse, Response};
 use std::fmt::Debug;
 use std::net::AddrParseError;
 use thiserror::Error;
@@ -20,6 +24,8 @@ pub enum AppError {
     SerdeError(String),
     #[error("tls error: {0}")]
     TlsError(String),
+    #[error("templating error: {0}")]
+    TemplatingError(String),
 }
 
 impl Debug for AppError {
@@ -67,5 +73,29 @@ impl From<tokio::task::JoinError> for AppError {
 impl From<pingora::tls::error::ErrorStack> for AppError {
     fn from(e: pingora::tls::error::ErrorStack) -> Self {
         Self::TlsError(e.to_string())
+    }
+}
+
+impl From<askama::Error> for AppError {
+    fn from(error: askama::Error) -> Self {
+        Self::TemplatingError(error.to_string())
+    }
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let code = match self {
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        let template = GenericError {
+            code: code.as_u16(),
+            status_code: code.to_string(),
+            description: self.to_string(),
+        };
+
+        match template.render() {
+            Ok(body) => (code, Html(body)).into_response(),
+            Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
+        }
     }
 }

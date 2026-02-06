@@ -1,27 +1,25 @@
-pub mod blocklist;
 mod config;
 mod error;
-mod geo;
 mod management;
 mod proxy;
-mod templates;
-mod utils;
 
 use crate::config::{AppConfig, HostConfig};
 use crate::error::AppError;
-use crate::geo::{GeoData, GeoWriter};
-use crate::management::{ControlService, MonitorService, MonitorState};
+use crate::management::init_control;
+use crate::management::monitoring::monitor::{MonitorState, Monitors};
+use crate::proxy::geo::{GeoData, GeoWriter};
+use crate::proxy::service::PingoraService;
 use clap::Parser;
 use pingora::prelude::*;
 use pingora::server::configuration::ServerConf;
 use reqwest::Client;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc};
-use tracing::{debug, info};
+use tokio::sync::mpsc;
+use tracing::{debug, error, info};
 use tracing_subscriber::EnvFilter;
-use crate::proxy::PProxy;
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -31,11 +29,11 @@ struct Cli {
     config: String,
 }
 
-
 fn init_pingora(
     config: AppConfig,
     geo_writer: mpsc::Sender<GeoData>,
     geo_cache_data: HashMap<IpAddr, GeoData>,
+    monitors: Monitors,
 ) -> Result<(), AppError> {
     let conf = ServerConf {
         version: 1,
@@ -65,36 +63,23 @@ fn init_pingora(
     info!("Server conf: {:?}", server.configuration);
     server.bootstrap();
 
-    let state = MonitorState::new(
-        Duration::from_secs(config.monitors.get("hp").unwrap().suspend_timeout),
-        config.monitors.get("hp").unwrap().commands.clone());
-
-
     info!("Bootstrap done");
 
-    let monitor_service = MonitorService {
-        state: state.clone(),
-    };
-    server.add_service(monitor_service);
-
-    let mut control_service = http_proxy_service(
-        &server.configuration,
-        ControlService {
-            state: state.clone(),
-        },
-    );
-
-
     let client = Client::builder().timeout(Duration::from_secs(3)).build()?;
-    
-    for (addr, HostConfig {tls, servers }) in config.hosts.into_iter() {
-        let pproxy = PProxy::new(state.clone(), servers.clone(), geo_writer.clone(), geo_cache_data.clone(), client.clone(), config.waf.clone());
+
+    for (addr, HostConfig { tls, servers }) in config.hosts.into_iter() {
+        let pproxy = PingoraService::new(
+            monitors.clone(),
+            servers.clone(),
+            geo_writer.clone(),
+            geo_cache_data.clone(),
+            client.clone(),
+            config.waf.clone(),
+        );
         let service = pproxy.build_service(server.configuration.clone(), addr, tls);
         server.add_service(service);
     }
 
-    control_service.add_tcp(&config.listen_control);
-    server.add_service(control_service);
     info!("Server starting");
     server.run_forever();
 }
@@ -124,8 +109,33 @@ async fn main() -> Result<(), AppError> {
     let local_config = config.clone();
     let writer = GeoWriter::open(&config.waf.geo_cache_file_path, geo_receiver).await?;
     writer.run().await;
+
+    let monitors: Arc<HashMap<String, Arc<MonitorState>>> = Arc::new(
+        config
+            .monitors
+            .into_iter()
+            .map(|(k, v)| (k, Arc::new(v.into())))
+            .collect(),
+    );
+
+    let monitors_local = monitors.clone();
+
+    tokio::spawn(async move {
+        if let Err(e) = init_control(config.control, monitors_local).await {
+            error!("{e}");
+        }
+    });
+
+    for monitor in monitors.values() {
+        let local = monitor.clone();
+        tokio::spawn(async move {
+            MonitorState::monitor_service(local).await;
+        });
+    }
+
+    let monitors_local = monitors.clone();
     tokio::task::spawn_blocking(move || {
-        init_pingora(local_config, geo_writer, get_cache_data)?;
+        init_pingora(local_config, geo_writer, get_cache_data, monitors_local)?;
         Ok::<(), AppError>(())
     })
     .await??;

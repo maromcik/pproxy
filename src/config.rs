@@ -1,7 +1,9 @@
 use crate::error::AppError;
+use crate::management::monitoring::monitor::MonitorState;
 use config::Config;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 pub type Servers = HashMap<String, ServerConfig>;
 
@@ -19,8 +21,6 @@ pub struct ServerConfig {
     #[serde(default)]
     pub key_path: Option<String>,
     #[serde(default)]
-    pub suspending: bool,
-    #[serde(default)]
     pub user_agent_blocklist: Option<HashSet<String>>,
     #[serde(default)]
     pub geo_fence_country_allowlist: Option<HashSet<String>>,
@@ -29,7 +29,6 @@ pub struct ServerConfig {
     #[serde(default)]
     pub monitor: Option<String>,
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HostConfig {
@@ -40,7 +39,13 @@ pub struct HostConfig {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MonitorConfig {
     pub suspend_timeout: u64,
-    pub commands: CommandConfig
+    pub commands: CommandConfig,
+}
+
+impl From<MonitorConfig> for MonitorState {
+    fn from(value: MonitorConfig) -> Self {
+        Self::new(Duration::from_secs(value.suspend_timeout), value.commands)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -53,6 +58,11 @@ pub struct CommandConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ControlConfig {
+    pub listen: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WafConfig {
     #[serde(default)]
     pub blocklist_url: Option<String>,
@@ -62,21 +72,19 @@ pub struct WafConfig {
     pub geo_cache_file_path: String,
 }
 
-
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
-    pub listen_control: String,
-    
+    pub control: ControlConfig,
+
     #[serde(default)]
     pub hosts: HashMap<String, HostConfig>,
-    
+
     #[serde(default)]
     pub monitors: HashMap<String, MonitorConfig>,
-    
+
     // #[serde(default)]
     pub waf: WafConfig,
-    
+
     #[serde(default = "default_info")]
     pub app_log_level: String,
     #[serde(default = "default_info")]

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+{% include "head.html" %}
+<body class="h-screen flex justify-center items-center p-4 bg-page">
+<div id="generic-error" class="w-full h-full flex justify-center items-center">
+    <div class="bg-cards shadow-2xl rounded-2xl p-4 flex flex-col items-center text-center space-y-6 max-w-lg w-full">
+
+        {% if code >= 500 %}
+        <!-- Server Error -->
+        <div class="text-red-600 dark:text-red-400 text-6xl mb-2">
+            <i class="fa-solid fa-server drop-shadow-lg"></i>
+        </div>
+        <h2 class="text-red-700 dark:text-red-400 text-3xl font-semibold tracking-tight">
+            Internal Server Error
+        </h2>
+
+        {% elif code == 404 %}
+        <!-- Not Found -->
+        <div class="text-yellow-600 dark:text-yellow-400 text-6xl mb-2">
+            <i class="fa-solid fa-magnifying-glass-location drop-shadow-lg"></i>
+        </div>
+        <h2 class="text-yellow-700 dark:text-yellow-400 text-3xl font-semibold tracking-tight">
+            Page Not Found
+        </h2>
+
+        {% elif code == 403 %}
+        <!-- Forbidden -->
+        <div class="text-orange-600 dark:text-orange-400 text-6xl mb-2">
+            <i class="fa-solid fa-ban drop-shadow-lg"></i>
+        </div>
+        <h2 class="text-orange-700 dark:text-orange-400 text-3xl font-semibold tracking-tight">
+            Access Denied
+        </h2>
+
+        {% elif code == 401 %}
+        <!-- Unauthorized -->
+        <div class="text-amber-600 dark:text-amber-400 text-6xl mb-2">
+            <i class="fa-solid fa-lock drop-shadow-lg"></i>
+        </div>
+        <h2 class="text-amber-700 dark:text-amber-400 text-3xl font-semibold tracking-tight">
+            Unauthorized
+        </h2>
+
+        {% elif code == 400 %}
+        <!-- Bad Request -->
+        <div class="text-amber-600 dark:text-amber-400 text-6xl mb-2">
+            <i class="fa-solid fa-triangle-exclamation drop-shadow-lg"></i>
+        </div>
+        <h2 class="text-amber-700 dark:text-amber-400 text-3xl font-semibold tracking-tight">
+            Bad Request
+        </h2>
+
+        {% else %}
+        <!-- Generic Error -->
+        <div class="text-error text-6xl mb-2">
+            <i class="fa-solid fa-circle-exclamation drop-shadow-lg"></i>
+        </div>
+        <h2 class="text-error text-3xl font-semibold tracking-tight">
+            Something Went Wrong
+        </h2>
+        {% endif %}
+
+        <!-- Error Info -->
+        <div id="generic-error-area" class="text-sat-l space-y-1">
+            <p class="text-lg font-mono text-sat-m text-center">{{ status_code }}</p>
+            <p class="text-base">{{ description }}</p>
+        </div>
+
+        <!-- Divider -->
+        <div class="w-16 border-t border-base my-2"></div>
+
+        <!-- Recovery -->
+        <p class="text-sat-l text-sm">
+            Please try refreshing the page, go back or return to the
+            <a href="/" class="text-acc font-semibold hover:underline">
+                homepage
+            </a>.
+        </p>
+
+        <!-- Action Buttons -->
+        <div class="flex gap-3 mt-2">
+            <button
+                    onclick="window.history.back()"
+                    class="inline-flex items-center gap-2 px-5 py-2 rounded-md bg-gray-400 dark:bg-gray-600 text-white hover:bg-gray-500 dark:hover:bg-gray-500 transition-all duration-150 shadow-sm"
+            >
+                <i class="fa-solid fa-arrow-left"></i>
+                Go Back
+            </button>
+
+            <button
+                    onclick="window.location.reload()"
+                    class="inline-flex items-center gap-2 px-5 py-2 rounded-md bg-acc text-button hover:bg-acc-l transition-all duration-150 shadow-sm"
+            >
+                <i class="fa-solid fa-rotate-right"></i>
+                Refresh
+            </button>
+        </div>
+    </div>
+</div>
+</body>
+</html>

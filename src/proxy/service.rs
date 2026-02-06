@@ -1,43 +1,41 @@
+use crate::config::{ServerConfig, Servers, WafConfig};
+use crate::error::AppError;
+use crate::management::monitoring::monitor::Monitors;
+use crate::management::templates::templates::PublicPageTemplate;
+use crate::proxy::blocklist::BlocklistIp;
+use crate::proxy::geo::GeoData;
+use askama::Template;
+use async_trait::async_trait;
+use ipnetwork::IpNetwork;
+use log::info;
+use pingora::http::ResponseHeader;
+use pingora::listeners::TlsAccept;
+use pingora::listeners::tls::TlsSettings;
+use pingora::prelude::{HttpPeer, ProxyHttp, Session, http_proxy_service};
+use pingora::protocols::l4::socket::SocketAddr;
+use pingora::protocols::tls::TlsRef;
+use pingora::server::configuration::ServerConf;
+use pingora::tls::ssl;
+use pingora::{Error, HTTPStatus, tls};
+use reqwest::Client;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use askama::Template;
-use async_trait::async_trait;
-use ipnetwork::IpNetwork;
-use log::info;
-use pingora::listeners::TlsAccept;
-use pingora::prelude::{http_proxy_service, HttpPeer, ProxyHttp, Session};
-use pingora::protocols::l4::socket::SocketAddr;
-use pingora::protocols::tls::TlsRef;
-use pingora::server::configuration::ServerConf;
-use pingora::{tls, Error, HTTPStatus};
-use pingora::http::ResponseHeader;
-use pingora::listeners::tls::TlsSettings;
-use pingora::tls::ssl;
-use reqwest::Client;
 use time::OffsetDateTime;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::Instant;
 use tracing::{debug, error, trace, warn};
-use crate::blocklist::BlocklistIp;
-use crate::config::{ServerConfig, Servers, WafConfig};
-use crate::error::AppError;
-use crate::geo::GeoData;
-use crate::management::MonitorState;
-use crate::templates::PublicPageTemplate;
-
 
 #[derive(Debug, Clone)]
 pub struct TlsSelector(HashMap<String, (tls::x509::X509, tls::pkey::PKey<tls::pkey::Private>)>);
 
 impl TlsSelector {
-    pub fn new (servers: Servers) -> Result<Self, AppError> {
+    pub fn new(servers: Servers) -> Result<Self, AppError> {
         let mut res = HashMap::new();
         for (sni, server) in servers.iter() {
-
             if let (Some(cert), Some(key)) = (server.cert_path.as_ref(), server.key_path.as_ref()) {
                 let cert_bytes = std::fs::read(cert)?;
                 let cert = tls::x509::X509::from_pem(&cert_bytes)?;
@@ -46,7 +44,6 @@ impl TlsSelector {
                 let key = tls::pkey::PKey::private_key_from_pem(&key_bytes)?;
                 res.insert(sni.clone(), (cert, key));
             }
-
         }
 
         Ok(Self(res))
@@ -62,11 +59,10 @@ impl TlsAccept for TlsSelector {
         tls::ext::ssl_use_certificate(ssl, cert).unwrap();
         tls::ext::ssl_use_private_key(ssl, key).unwrap();
     }
-
 }
 
-pub struct PProxy {
-    pub state: Arc<MonitorState>,
+pub struct PingoraService {
+    pub monitors: Monitors,
     pub servers: Servers,
     pub waf_config: WafConfig,
     pub geo_fence: RwLock<HashMap<IpAddr, GeoData>>,
@@ -75,10 +71,17 @@ pub struct PProxy {
     pub geo_cache_writer: mpsc::Sender<GeoData>,
 }
 
-impl PProxy {
-    pub fn new(state: Arc<MonitorState>, servers: Servers, geo_cache_writer: mpsc::Sender<GeoData>, geo_cache_data: HashMap<IpAddr, GeoData>, client: Client, waf_config: WafConfig) -> Self {
+impl PingoraService {
+    pub fn new(
+        monitors: Monitors,
+        servers: Servers,
+        geo_cache_writer: mpsc::Sender<GeoData>,
+        geo_cache_data: HashMap<IpAddr, GeoData>,
+        client: Client,
+        waf_config: WafConfig,
+    ) -> Self {
         Self {
-            state,
+            monitors,
             servers,
             waf_config,
             geo_fence: RwLock::new(geo_cache_data),
@@ -87,14 +90,14 @@ impl PProxy {
             geo_cache_writer,
         }
     }
-    pub fn build_service(self, server_conf: Arc<ServerConf>, host: String, tls: bool) -> impl pingora::services::Service  {
+    pub fn build_service(
+        self,
+        server_conf: Arc<ServerConf>,
+        host: String,
+        tls: bool,
+    ) -> impl pingora::services::Service {
         let selector = Box::new(TlsSelector::new(self.servers.clone()).unwrap());
-        let mut service = http_proxy_service(
-            &server_conf.clone(),
-            self
-        );
-
-
+        let mut service = http_proxy_service(&server_conf.clone(), self);
 
         if tls {
             let tls_settings = TlsSettings::with_callbacks(selector.clone()).unwrap();
@@ -174,7 +177,7 @@ impl RequestMetadata {
     }
 }
 
-impl PProxy {
+impl PingoraService {
     async fn add_ip_to_blocklist(&self, data: &BlocklistIp) {
         let Some(blocklist_url) = &self.waf_config.blocklist_url else {
             trace!("Blocklist disabled");
@@ -272,7 +275,10 @@ impl PProxy {
             return Ok(blocked);
         }
         let data = client
-            .get(format!("{}{}", self.waf_config.geo_api_url, metadata.client_ip))
+            .get(format!(
+                "{}{}",
+                self.waf_config.geo_api_url, metadata.client_ip
+            ))
             .send()
             .await?
             .json::<GeoData>()
@@ -336,7 +342,7 @@ impl PProxy {
 }
 
 #[async_trait]
-impl ProxyHttp for PProxy {
+impl ProxyHttp for PingoraService {
     type CTX = ();
 
     fn new_ctx(&self) -> Self::CTX {
@@ -399,26 +405,34 @@ impl ProxyHttp for PProxy {
             return Ok(true);
         }
 
+        let Some(monitor) = server
+            .monitor
+            .as_ref()
+            .and_then(|key| self.monitors.get(key))
+        else {
+            info!("REQ:NO_TRACKER: {metadata}");
+            return Ok(false);
+        };
+
         let message = match (
-            server.suspending,
-            self.state.auto_suspend_enabled.load(Ordering::Acquire),
-            self.state.suspended.load(Ordering::Acquire),
+            monitor.auto_suspend_enabled.load(Ordering::Acquire),
+            monitor.suspended.load(Ordering::Acquire),
         ) {
-            (true, true, true) => {
+            (true, true) => {
                 info!("REQ:ENABLED:RESUMING: {metadata}");
-                self.state.logs.write().await.insert(
+                monitor.logs.write().await.insert(
                     metadata.client_ip,
                     (
                         OffsetDateTime::now_local().unwrap_or(OffsetDateTime::now_utc()),
                         format!("ENABLED:RESUMING: {metadata}"),
                     ),
                 );
-                self.state.wake_up.store(true, Ordering::Release);
+                monitor.wake_up.store(true, Ordering::Release);
                 "The server is starting, the page will be refreshing automatically until you are redirected to immich/jellyfin. If not, try refreshing the page manually after about 10 seconds."
             }
-            (true, false, true) => {
+            (false, true) => {
                 info!("REQ:DISABLED:ATTEMPT: {metadata}");
-                self.state.logs.write().await.insert(
+                monitor.logs.write().await.insert(
                     metadata.client_ip,
                     (
                         OffsetDateTime::now_local().unwrap_or(OffsetDateTime::now_utc()),
@@ -427,24 +441,20 @@ impl ProxyHttp for PProxy {
                 );
                 "Auto suspend/wake up is disabled, please contact the administrator."
             }
-            (true, _, _) => {
+            (_, _) => {
                 info!("REQ:TRACKER_UPDATED: {metadata}");
-                let mut timer = self.state.timer.write().await;
+                let mut timer = monitor.timer.write().await;
                 *timer = Instant::now();
-                return Ok(false);
-            }
-            (false, _, _) => {
-                info!("REQ:NO_TRACKER: {metadata}");
                 return Ok(false);
             }
         };
 
         let tmpl = PublicPageTemplate {
             message: Some(message.to_string()),
-            enabled: self.state.auto_suspend_enabled.load(Ordering::Relaxed),
-            suspended: self.state.suspended.load(Ordering::Relaxed),
-            suspending: self.state.suspending.load(Ordering::Relaxed),
-            waking_up: self.state.wake_up.load(Ordering::Relaxed),
+            enabled: monitor.auto_suspend_enabled.load(Ordering::Relaxed),
+            suspended: monitor.suspended.load(Ordering::Relaxed),
+            suspending: monitor.suspending.load(Ordering::Relaxed),
+            waking_up: monitor.wake_up.load(Ordering::Relaxed),
         };
 
         let Ok(body) = tmpl.render() else {
