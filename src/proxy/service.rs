@@ -63,9 +63,18 @@ impl TlsAccept for TlsSelector {
             return;
         };
 
-        for (i, cert) in certs.iter().enumerate() {
+        let Some(cert) = certs.get(0) else {
+            warn!("Leaf certificate for SNI: {} could not be loaded", sni_provided);
+            return;
+        };
+
+        if let Err(e) = tls::ext::ssl_use_certificate(ssl, cert) {
+            error!("Could not add leaf cert: {}", e);
+        }
+
+        for (i, cert) in certs.iter().skip(1).enumerate() {
             if let Err(e) = tls::ext::ssl_add_chain_cert(ssl, cert) {
-                error!("Could not add cert {}: {}", i, e);
+                error!("Could not add intermediate cert {}: {}", i, e);
             }
         }
 
