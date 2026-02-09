@@ -30,7 +30,7 @@ use tokio::time::Instant;
 use tracing::{debug, error, trace, warn};
 
 #[derive(Debug, Clone)]
-pub struct TlsSelector(HashMap<String, (tls::x509::X509, tls::pkey::PKey<tls::pkey::Private>)>);
+pub struct TlsSelector(HashMap<String, (Vec<tls::x509::X509>, tls::pkey::PKey<tls::pkey::Private>)>);
 
 impl TlsSelector {
     pub fn new(servers: Servers) -> Result<Self, AppError> {
@@ -38,11 +38,11 @@ impl TlsSelector {
         for (sni, server) in servers.iter() {
             if let (Some(cert), Some(key)) = (server.cert_path.as_ref(), server.key_path.as_ref()) {
                 let cert_bytes = std::fs::read(cert)?;
-                let cert = tls::x509::X509::from_pem(&cert_bytes)?;
+                let certs = tls::x509::X509::stack_from_pem(&cert_bytes)?;
 
                 let key_bytes = std::fs::read(key)?;
                 let key = tls::pkey::PKey::private_key_from_pem(&key_bytes)?;
-                res.insert(sni.clone(), (cert, key));
+                res.insert(sni.clone(), (certs, key));
             }
         }
 
@@ -58,14 +58,17 @@ impl TlsAccept for TlsSelector {
             return;
         };
         debug!("SNI provided: {}", sni_provided);
-        let Some((cert, key)) = self.0.get(&sni_provided.to_string()) else {
+        let Some((certs, key)) = self.0.get(&sni_provided.to_string()) else {
             warn!("No certificate found for SNI: {}", sni_provided);
             return;
         };
 
-        if let Err(e) = tls::ext::ssl_use_certificate(ssl, cert) {
-            error!("Could not set certificate: {}", e);
+        for (i, cert) in certs.iter().enumerate() {
+            if let Err(e) = tls::ext::ssl_add_chain_cert(ssl, cert) {
+                error!("Could not add cert {}: {}", i, e);
+            }
         }
+
         if let Err(e) = tls::ext::ssl_use_private_key(ssl, key) {
             error!("Could not set private key: {}", e);
         }
