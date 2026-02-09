@@ -1,4 +1,4 @@
-use crate::config::{ServerConfig, Servers, WafConfig};
+use crate::config::{RuleAction, ServerConfig, Servers, WafConfig};
 use crate::error::AppError;
 use crate::management::monitoring::monitor::Monitors;
 use crate::management::templates::templates::PublicPageTemplate;
@@ -157,7 +157,8 @@ impl RequestMetadata {
                 SocketAddr::Unix(_) => String::new(),
             })
             .unwrap_or_default();
-
+        debug!("Client SocketAddr: {}", client_addr);
+        
         let client_ip = session
             .req_header()
             .headers
@@ -165,7 +166,7 @@ impl RequestMetadata {
             .and_then(|h| h.to_str().ok())
             .map(|h| h.to_string())
             .unwrap_or_else(|| client_addr);
-        debug!("Client IP: {}", client_ip);
+        debug!("Client Real IP: {}", client_ip);
 
         let host = session
             .req_header()
@@ -315,8 +316,30 @@ impl PingoraService {
         }
         Ok(blocked)
     }
+    
+    async fn is_blocked_by_rules(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
+        let Some(rules) = server.ip_rules.as_ref() else {
+            return false;
+        };
+        for rule in rules.iter() {
+            if rule.subnet.contains(metadata.client_ip) {
+                match rule.action {
+                    RuleAction::Deny => {
+                        return true;
+                    }
+                    RuleAction::Allow => {}
+                }
+            }
+        }
+        false
+    }
 
     async fn is_blocked(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
+        if self.is_blocked_by_rules(metadata, server).await {
+            debug!("blocked by rules");
+            return true;
+        }
+        
         if self.is_private(metadata) {
             debug!("private IP");
             return false;

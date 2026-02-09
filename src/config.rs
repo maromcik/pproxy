@@ -4,6 +4,7 @@ use config::Config;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
+use ipnetwork::IpNetwork;
 
 pub type Servers = HashMap<String, ServerConfig>;
 
@@ -27,7 +28,22 @@ pub struct ServerConfig {
     #[serde(default)]
     pub geo_fence_isp_blocklist: Option<HashSet<String>>,
     #[serde(default)]
+    pub ip_rules: Option<Vec<IpRule>>,
+    #[serde(default)]
     pub monitor: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct IpRule {
+    pub subnet: IpNetwork,
+    pub action: RuleAction,
+}
+
+
+#[derive(Debug, Serialize, Deserialize, Clone, Hash, Eq, PartialEq)]
+pub enum RuleAction {
+    Deny,
+    Allow,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
