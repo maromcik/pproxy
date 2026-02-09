@@ -158,7 +158,7 @@ impl RequestMetadata {
             })
             .unwrap_or_default();
         debug!("Client SocketAddr: {}", client_addr);
-        
+
         let client_ip = session
             .req_header()
             .headers
@@ -316,8 +316,9 @@ impl PingoraService {
         }
         Ok(blocked)
     }
-    
+
     async fn is_blocked_by_rules(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
+        debug!("Rules: {:?}", server.ip_rules);
         let Some(rules) = server.ip_rules.as_ref() else {
             return false;
         };
@@ -339,7 +340,7 @@ impl PingoraService {
             debug!("blocked by rules");
             return true;
         }
-        
+
         if self.is_private(metadata) {
             debug!("private IP");
             return false;
