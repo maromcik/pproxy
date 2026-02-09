@@ -11,6 +11,9 @@ pub type Servers = HashMap<String, ServerConfig>;
 fn default_info<'a>() -> String {
     String::from("info")
 }
+fn default_static_files<'a>() -> String {
+    String::from("static")
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ServerConfig {
@@ -105,6 +108,8 @@ pub struct AppConfig {
     pub app_log_level: String,
     #[serde(default = "default_info")]
     pub all_log_level: String,
+    #[serde(default = "default_static_files")]
+    pub static_files_path: String,
 }
 
 impl AppConfig {

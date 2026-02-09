@@ -121,7 +121,7 @@ async fn main() -> Result<(), AppError> {
     let monitors_local = monitors.clone();
 
     tokio::spawn(async move {
-        if let Err(e) = init_control(config.control, monitors_local).await {
+        if let Err(e) = init_control(config.control, monitors_local, config.static_files_path.as_str()).await {
             error!("{e}");
         }
     });
