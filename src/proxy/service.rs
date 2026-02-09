@@ -318,17 +318,20 @@ impl PingoraService {
     }
 
     async fn is_blocked_by_rules(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
-        debug!("Rules: {:?}", server.ip_rules);
         let Some(rules) = server.ip_rules.as_ref() else {
             return false;
         };
         for rule in rules.iter() {
             if rule.subnet.contains(metadata.client_ip) {
-                match rule.action {
+                return match rule.action {
                     RuleAction::Deny => {
-                        return true;
+                        debug!("BLOCKED:RULE: {:?}", rule);
+                        true
                     }
-                    RuleAction::Allow => {}
+                    RuleAction::Allow => {
+                        debug!("ALLOWED:RULE: {:?}", rule);
+                        false
+                    }
                 }
             }
         }
@@ -337,12 +340,11 @@ impl PingoraService {
 
     async fn is_blocked(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
         if self.is_blocked_by_rules(metadata, server).await {
-            debug!("blocked by rules");
             return true;
         }
 
         if self.is_private(metadata) {
-            debug!("private IP");
+            debug!("ALLOWED:PRIVATE IP");
             return false;
         }
 
