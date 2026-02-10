@@ -3,8 +3,10 @@ use crate::management::monitoring::monitor::MonitorState;
 use config::Config;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::time::Duration;
 use ipnetwork::IpNetwork;
+use tracing::debug;
 
 pub type Servers = HashMap<String, ServerConfig>;
 
@@ -33,6 +35,10 @@ pub struct ServerConfig {
     #[serde(default)]
     pub ip_rules: Option<Vec<IpRule>>,
     #[serde(default)]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub proxy_headers: HashMap<String, String>,
+    #[serde(default)]
     pub monitor: Option<String>,
 }
 
@@ -40,8 +46,40 @@ pub struct ServerConfig {
 pub struct IpRule {
     pub subnet: IpNetwork,
     pub action: RuleAction,
+    pub source: IpSource,
 }
 
+impl RuleAction {
+    pub fn match_rule(&self) -> bool {
+        match self {
+            RuleAction::Deny => {
+                debug!("BLOCKED:RULE: {:?}", self);
+                true
+            }
+            RuleAction::Allow => {
+                debug!("ALLOWED:RULE: {:?}", self);
+                false
+            }
+        }
+    }
+}
+
+impl IpRule {
+    pub fn contains(&self, addr: Option<IpAddr>) -> bool {
+        if let Some(ip) = addr && self.subnet.contains(ip) {
+            true
+        }
+        else {
+            false
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Hash, Eq, PartialEq)]
+pub enum IpSource {
+    Forwarded,
+    Direct,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, Hash, Eq, PartialEq)]
 pub enum RuleAction {

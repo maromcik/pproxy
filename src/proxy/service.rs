@@ -1,4 +1,4 @@
-use crate::config::{RuleAction, ServerConfig, Servers, WafConfig};
+use crate::config::{IpSource, ServerConfig, Servers, WafConfig};
 use crate::error::AppError;
 use crate::management::monitoring::monitor::Monitors;
 use crate::management::templates::templates::PublicPageTemplate;
@@ -8,7 +8,7 @@ use askama::Template;
 use async_trait::async_trait;
 use ipnetwork::IpNetwork;
 use log::info;
-use pingora::http::ResponseHeader;
+use pingora::http::{RequestHeader, ResponseHeader};
 use pingora::listeners::TlsAccept;
 use pingora::listeners::tls::TlsSettings;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session, http_proxy_service};
@@ -30,7 +30,9 @@ use tokio::time::Instant;
 use tracing::{debug, error, trace, warn};
 
 #[derive(Debug, Clone)]
-pub struct TlsSelector(HashMap<String, (Vec<tls::x509::X509>, tls::pkey::PKey<tls::pkey::Private>)>);
+pub struct TlsSelector(
+    HashMap<String, (Vec<tls::x509::X509>, tls::pkey::PKey<tls::pkey::Private>)>,
+);
 
 impl TlsSelector {
     pub fn new(servers: Servers) -> Result<Self, AppError> {
@@ -64,7 +66,10 @@ impl TlsAccept for TlsSelector {
         };
 
         let Some(cert) = certs.get(0) else {
-            warn!("Leaf certificate for SNI: {} could not be loaded", sni_provided);
+            warn!(
+                "Leaf certificate for SNI: {} could not be loaded",
+                sni_provided
+            );
             return;
         };
 
@@ -133,10 +138,16 @@ impl PingoraService {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Default)]
+pub struct ProxyContext {
+    metadata: Option<RequestMetadata>,
+}
+
+#[derive(Debug, Clone)]
 struct RequestMetadata {
     user_agent: String,
     client_ip: IpAddr,
+    forwarded_ip: Option<IpAddr>,
     host: String,
     method: String,
     uri: String,
@@ -171,14 +182,13 @@ impl RequestMetadata {
             .unwrap_or_default();
         debug!("Client SocketAddr: {}", client_addr);
 
-        let client_ip = session
+        let client_forwarded = session
             .req_header()
             .headers
             .get("X-Forwarded-For")
             .and_then(|h| h.to_str().ok())
-            .map(|h| h.to_string())
-            .unwrap_or_else(|| client_addr);
-        debug!("Client Real IP: {}", client_ip);
+            .map(|h| h.to_string());
+        debug!("Client Forwarded IP: {:?}", client_forwarded);
 
         let host = session
             .req_header()
@@ -193,7 +203,8 @@ impl RequestMetadata {
 
         Ok(Self {
             user_agent,
-            client_ip: client_ip.parse()?,
+            client_ip: client_addr.parse()?,
+            forwarded_ip: client_forwarded.map(|ip| ip.parse().ok()).flatten(),
             host,
             method,
             uri,
@@ -334,15 +345,15 @@ impl PingoraService {
             return false;
         };
         for rule in rules.iter() {
-            if rule.subnet.contains(metadata.client_ip) {
-                return match rule.action {
-                    RuleAction::Deny => {
-                        debug!("BLOCKED:RULE: {:?}", rule);
-                        true
+            match rule.source {
+                IpSource::Direct => {
+                    if rule.contains(Some(metadata.client_ip)) {
+                        return rule.action.match_rule();
                     }
-                    RuleAction::Allow => {
-                        debug!("ALLOWED:RULE: {:?}", rule);
-                        false
+                }
+                IpSource::Forwarded => {
+                    if rule.contains(metadata.forwarded_ip) {
+                        return rule.action.match_rule();
                     }
                 }
             }
@@ -392,10 +403,10 @@ impl PingoraService {
 
 #[async_trait]
 impl ProxyHttp for PingoraService {
-    type CTX = ();
+    type CTX = ProxyContext;
 
     fn new_ctx(&self) -> Self::CTX {
-        ()
+        ProxyContext::default()
     }
 
     async fn upstream_peer(
@@ -431,7 +442,7 @@ impl ProxyHttp for PingoraService {
     async fn request_filter(
         &self,
         session: &mut Session,
-        _ctx: &mut Self::CTX,
+        ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
         let metadata = match RequestMetadata::parse(&session) {
             Ok(h) => h,
@@ -440,6 +451,8 @@ impl ProxyHttp for PingoraService {
                 return Ok(true);
             }
         };
+
+        ctx.metadata = Some(metadata.clone());
 
         let Some(server) = self.servers.get(&metadata.host) else {
             warn!(
@@ -521,5 +534,74 @@ impl ProxyHttp for PingoraService {
             .write_response_body(Some(bytes.into()), false)
             .await?;
         Ok(true)
+    }
+
+    async fn upstream_request_filter(
+        &self,
+        session: &mut Session,
+        upstream_request: &mut RequestHeader,
+        ctx: &mut Self::CTX,
+    ) -> pingora::Result<()>
+    where
+        Self::CTX: Send + Sync,
+    {
+        if let Some(upgrade) = session.get_header("Upgrade") {
+            upstream_request.insert_header("Upgrade", upgrade)?;
+        }
+
+        let Some(metadata) = ctx.metadata.as_ref() else {
+            return Ok(());
+        };
+
+        upstream_request.insert_header("X-Real-IP", metadata.client_ip.to_string())?;
+
+        let mut forwarded_for = String::new();
+        if let Some(existing_xff) = session
+            .get_header("X-Forwarded-For")
+            .and_then(|h| h.to_str().ok())
+        {
+            forwarded_for.push_str(existing_xff);
+            forwarded_for.push_str(", ");
+        }
+        forwarded_for.push_str(&metadata.client_ip.to_string());
+
+        upstream_request.insert_header("X-Forwarded-For", &forwarded_for)?;
+
+        let Some(server) = self.servers.get(&metadata.host) else {
+            return Ok(());
+        };
+
+        let scheme = if server.cert_path.is_some() { "https" } else { "http" };
+        upstream_request.insert_header("X-Forwarded-Proto", scheme)?;
+
+        for (k, v) in server.proxy_headers.iter() {
+            upstream_request.insert_header(k.clone(), v)?;
+        }
+
+        Ok(())
+    }
+
+    async fn response_filter(
+        &self,
+        _session: &mut Session,
+        upstream_response: &mut ResponseHeader,
+        ctx: &mut Self::CTX,
+    ) -> pingora::Result<()>
+    where
+        Self::CTX: Send + Sync,
+    {
+        let Some(metadata) = ctx.metadata.as_ref() else {
+            return Ok(());
+        };
+
+        let Some(server) = self.servers.get(&metadata.host) else {
+            return Ok(());
+        };
+
+        for (k, v) in server.headers.iter() {
+            upstream_response.insert_header(k.clone(), v)?;
+        }
+
+        Ok(())
     }
 }
