@@ -60,7 +60,12 @@ impl TlsAccept for TlsSelector {
             return;
         };
         debug!("SNI provided: {}", sni_provided);
-        let Some((certs, key)) = self.0.get(&sni_provided.to_string()) else {
+        let Some((certs, key)) = self.0.get(
+            &sni_provided
+                .strip_prefix("www.")
+                .unwrap_or(&sni_provided)
+                .to_string(),
+        ) else {
             warn!("No certificate found for SNI: {}", sni_provided);
             return;
         };
@@ -421,19 +426,18 @@ impl ProxyHttp for PingoraService {
             ));
         };
 
-        let mut peer =
-            if let Some(server_config) = self.servers.get_server(&metadata.host) {
-                Box::new(HttpPeer::new(
-                    &server_config.upstream,
-                    server_config.upstream_tls,
-                    "".to_string(),
-                ))
-            } else {
-                return Err(Error::explain(
-                    HTTPStatus(404),
-                    "Server name not supported by pproxy",
-                ));
-            };
+        let mut peer = if let Some(server_config) = self.servers.get_server(&metadata.host) {
+            Box::new(HttpPeer::new(
+                &server_config.upstream,
+                server_config.upstream_tls,
+                "".to_string(),
+            ))
+        } else {
+            return Err(Error::explain(
+                HTTPStatus(404),
+                "Server name not supported by pproxy",
+            ));
+        };
         peer.options.connection_timeout = Some(Duration::from_secs(120));
         Ok(peer)
     }
@@ -570,7 +574,11 @@ impl ProxyHttp for PingoraService {
             return Ok(());
         };
 
-        let scheme = if server.cert_path.is_some() { "https" } else { "http" };
+        let scheme = if server.cert_path.is_some() {
+            "https"
+        } else {
+            "http"
+        };
         upstream_request.insert_header("X-Forwarded-Proto", scheme)?;
 
         for (k, v) in server.proxy_headers.iter() {
