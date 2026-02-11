@@ -37,7 +37,7 @@ pub struct TlsSelector(
 impl TlsSelector {
     pub fn new(servers: Servers) -> Result<Self, AppError> {
         let mut res = HashMap::new();
-        for (sni, server) in servers.iter() {
+        for (sni, server) in servers.0.iter() {
             if let (Some(cert), Some(key)) = (server.cert_path.as_ref(), server.key_path.as_ref()) {
                 let cert_bytes = std::fs::read(cert)?;
                 let certs = tls::x509::X509::stack_from_pem(&cert_bytes)?;
@@ -411,19 +411,18 @@ impl ProxyHttp for PingoraService {
 
     async fn upstream_peer(
         &self,
-        session: &mut Session,
-        _ctx: &mut Self::CTX,
+        _session: &mut Session,
+        ctx: &mut Self::CTX,
     ) -> pingora::Result<Box<HttpPeer>> {
-        let Some(host) = session.req_header().headers.get("Host") else {
+        let Some(metadata) = ctx.metadata.as_ref() else {
             return Err(Error::explain(
                 HTTPStatus(404),
                 "Server name not supported by pproxy",
             ));
         };
-        debug!("upstream: {:?}", host);
 
         let mut peer =
-            if let Some(server_config) = self.servers.get(host.to_str().unwrap_or_default()) {
+            if let Some(server_config) = self.servers.get_server(&metadata.host) {
                 Box::new(HttpPeer::new(
                     &server_config.upstream,
                     server_config.upstream_tls,
@@ -454,7 +453,7 @@ impl ProxyHttp for PingoraService {
 
         ctx.metadata = Some(metadata.clone());
 
-        let Some(server) = self.servers.get(&metadata.host) else {
+        let Some(server) = self.servers.get_server(&metadata.host) else {
             warn!(
                 "could not find the server configuration for host: {}",
                 metadata.host
@@ -567,7 +566,7 @@ impl ProxyHttp for PingoraService {
 
         upstream_request.insert_header("X-Forwarded-For", &forwarded_for)?;
 
-        let Some(server) = self.servers.get(&metadata.host) else {
+        let Some(server) = self.servers.get_server(&metadata.host) else {
             return Ok(());
         };
 
@@ -594,7 +593,7 @@ impl ProxyHttp for PingoraService {
             return Ok(());
         };
 
-        let Some(server) = self.servers.get(&metadata.host) else {
+        let Some(server) = self.servers.get_server(&metadata.host) else {
             return Ok(());
         };
 

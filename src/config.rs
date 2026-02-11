@@ -8,7 +8,16 @@ use std::time::Duration;
 use ipnetwork::IpNetwork;
 use tracing::debug;
 
-pub type Servers = HashMap<String, ServerConfig>;
+
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Servers(pub HashMap<String, ServerConfig>);
+
+impl Servers {
+    pub fn get_server(&self, name: &str) -> Option<&ServerConfig> {
+        self.0.get(name.strip_prefix("www.").unwrap_or(name))
+    }
+}
 
 fn default_info<'a>() -> String {
     String::from("info")
