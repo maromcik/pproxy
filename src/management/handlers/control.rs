@@ -81,6 +81,7 @@ pub async fn control_monitor(
         .into_iter()
         .sorted_by_key(|(_, (d, _))| *d)
         .map(|(k, (d, l))| (k.to_string(), (d.to_string(), l)))
+        .rev()
         .collect_vec();
 
     let elapsed = monitor.timer.read().await.elapsed();
