@@ -601,7 +601,11 @@ impl ProxyHttp for PingoraService {
         };
 
         self.rewrite_request(session, ctx).await;
-        self.redirect_request(session, ctx).await;
+
+        if self.redirect_request(session, ctx).await? {
+            session.set_keepalive(None);
+            return Ok(true);
+        }
 
         if self.is_blocked(&metadata, server).await {
             info!("BLOCKED:REQ: {metadata}");
