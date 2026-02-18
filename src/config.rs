@@ -57,6 +57,8 @@ pub struct ServerConfig {
 pub struct RewriteRule {
     pub pattern: String,
     pub new: String,
+    #[serde(default)]
+    pub redirect: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

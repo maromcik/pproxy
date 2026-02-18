@@ -480,6 +480,16 @@ impl PingoraService {
         if let Err(e) = req.insert_header("Host", new_host) {
             error!("Host rewrite failed: {}", e);
         }
+
+        let scheme = if server.cert_path.is_some() { "https" } else { "http" };
+            let location = format!("{}://{}{}", scheme, new_host, full_uri);
+
+            let mut resp = ResponseHeader::build(302, None).unwrap();
+            resp.insert_header("Location", location).unwrap();
+            session.write_response_header(Box::new(resp), true).await.unwrap();
+
+        debug!("redirecting")
+
     }
 }
 
