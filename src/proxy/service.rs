@@ -538,6 +538,7 @@ impl ProxyHttp for PingoraService {
             Ok(h) => h,
             Err(e) => {
                 error!("{e}");
+                session.set_keepalive(None);
                 return Ok(true);
             }
         };
@@ -549,6 +550,7 @@ impl ProxyHttp for PingoraService {
                 "could not find the server configuration for host: {}",
                 metadata.host
             );
+            session.set_keepalive(None);
             return Ok(true);
         };
 
@@ -556,6 +558,7 @@ impl ProxyHttp for PingoraService {
 
         if self.is_blocked(&metadata, server).await {
             info!("BLOCKED:REQ: {metadata}");
+            session.set_keepalive(None);
             return Ok(true);
         }
 
@@ -625,6 +628,7 @@ impl ProxyHttp for PingoraService {
         session
             .write_response_body(Some(bytes.into()), false)
             .await?;
+        session.set_keepalive(None);
         Ok(true)
     }
 
