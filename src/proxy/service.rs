@@ -220,7 +220,6 @@ impl RequestMetadata {
 
         let query = headers.uri.query();
         let port = listen_addr.port();
-        debug!("PORT: {}", port);
         let mut full_url = url::Url::parse(&format!("{}://{}:{}", scheme, host, port))?;
         full_url.set_query(query);
         full_url.set_path(&uri);
@@ -440,7 +439,7 @@ impl PingoraService {
         if server.rewrite_rules.is_empty() {
             return;
         }
-        error!("rewrite");
+
         for rule in &server.rewrite_rules {
             let Ok(re) = Regex::new(&rule.pattern) else {
                 warn!("Invalid rewrite regex: {}", rule.pattern);
@@ -492,7 +491,7 @@ impl PingoraService {
         if server.redirect_rules.is_empty() {
             return Ok(false);
         }
-        debug!("META:BEFORE_REDIRECT: {}", metadata);
+
         for rule in &server.redirect_rules {
             let Ok(re) = Regex::new(&rule.pattern) else {
                 warn!("Invalid redirect regex: {}", rule.pattern);
@@ -528,7 +527,6 @@ impl PingoraService {
                             Error::explain(HTTPStatus(500), "Internal server error")
                         })?;
 
-                    debug!("META:AFTER_REDIRECT: {}", metadata);
                     return Ok(true);
                 }
             }
