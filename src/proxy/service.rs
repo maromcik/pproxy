@@ -486,7 +486,7 @@ impl PingoraService {
 
             let mut resp = ResponseHeader::build(302, None).unwrap();
             resp.insert_header("Location", location).unwrap();
-            session.write_response_header(Box::new(resp), true).await.unwrap();
+            // session.write_response_header(Box::new(resp), true).await.unwrap();
 
         debug!("redirecting")
 
