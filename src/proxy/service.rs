@@ -424,48 +424,32 @@ impl PingoraService {
             return;
         }
 
-        // match against host + path
-        let mut composite = format!("{}{}", metadata.host, metadata.uri);
-        let original = composite.clone();
-        let mut rewritten = false;
-
         for rule in &server.rewrite_rules {
             let Ok(re) = Regex::new(&rule.pattern) else {
                 warn!("Invalid rewrite regex: {}", rule.pattern);
                 continue;
             };
 
-            if re.is_match(&composite) {
-                let replaced = re.replace(&composite, rule.new.as_str()).to_string();
-
-                if replaced != composite {
+            if re.is_match(&metadata.uri) {
+                let replaced = re.replace(&metadata.uri, rule.new.as_str()).to_string();
+                if replaced != metadata.uri {
                     debug!(
-                    "REWRITE: {} -> {} (/{}/ -> {})",
-                    composite, replaced, rule.pattern, rule.new
+                    "REWRITE: {} -> {} (RULE: {} -> {})",
+                    metadata.uri, replaced, rule.pattern, rule.new
                 );
-                    composite = replaced;
-                    rewritten = true;
+                    metadata.uri = replaced;
+                } else {
+                    return;
                 }
             }
         }
 
-        if !rewritten {
-            return;
-        }
-
-        let Some((new_host, new_path)) = composite.split_once('/') else {
-            warn!("Invalid rewrite result: {}", composite);
-            return;
-        };
-
-        let new_path = format!("/{}", new_path);
-
         let req = session.req_header_mut();
 
         let full_uri = if let Some(q) = req.uri.query() {
-            format!("{}?{}", new_path, q)
+            format!("{}?{}", metadata.uri, q)
         } else {
-            new_path.clone()
+            metadata.uri.clone()
         };
 
 
@@ -476,20 +460,7 @@ impl PingoraService {
                 return;
             }
         }
-
-        if let Err(e) = req.insert_header("Host", new_host) {
-            error!("Host rewrite failed: {}", e);
-        }
-
-        let scheme = if server.cert_path.is_some() { "https" } else { "http" };
-            let location = format!("{}://{}{}", scheme, new_host, full_uri);
-
-            let mut resp = ResponseHeader::build(302, None).unwrap();
-            resp.insert_header("Location", location).unwrap();
-            // session.write_response_header(Box::new(resp), true).await.unwrap();
-
-        debug!("redirecting")
-
+        debug!("rewritten")
     }
 }
 

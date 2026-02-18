@@ -50,15 +50,15 @@ pub struct ServerConfig {
     #[serde(default)]
     pub monitor: Option<String>,
     #[serde(default)]
-    pub rewrite_rules: Vec<RewriteRule>,
+    pub rewrite_rules: Vec<PathRule>,
+    #[serde(default)]
+    pub redirect_rules: Vec<PathRule>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct RewriteRule {
+pub struct PathRule {
     pub pattern: String,
     pub new: String,
-    #[serde(default)]
-    pub redirect: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
