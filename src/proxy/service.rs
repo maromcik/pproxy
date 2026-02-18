@@ -96,6 +96,8 @@ impl TlsAccept for TlsSelector {
 }
 
 pub struct PingoraService {
+    pub listen_addr: core::net::SocketAddr,
+    pub tls: bool,
     pub monitors: Monitors,
     pub servers: Servers,
     pub waf_config: WafConfig,
@@ -107,6 +109,8 @@ pub struct PingoraService {
 
 impl PingoraService {
     pub fn new(
+        listen_addr: core::net::SocketAddr,
+        tls: bool,
         monitors: Monitors,
         servers: Servers,
         geo_cache_writer: mpsc::Sender<GeoData>,
@@ -115,6 +119,8 @@ impl PingoraService {
         waf_config: WafConfig,
     ) -> Self {
         Self {
+            listen_addr,
+            tls,
             monitors,
             servers,
             waf_config,
@@ -149,30 +155,36 @@ pub struct ProxyContext {
     metadata: Option<RequestMetadata>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct RequestMetadata {
     user_agent: String,
     client_ip: IpAddr,
     forwarded_ip: Option<IpAddr>,
+    full_url: url::Url,
     host: String,
+    port: u16,
     method: String,
     uri: String,
+    scheme: String,
+    query: String,
 }
 
 impl Display for RequestMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} -- {} {}{} '{}'",
-            self.client_ip, self.method, self.host, self.uri, self.user_agent
+            "{} -- {} {} '{}'",
+            self.client_ip, self.method, self.full_url.as_str(), self.user_agent
         )
     }
 }
 
 impl RequestMetadata {
-    pub fn parse(session: &Session) -> Result<Self, AppError> {
-        let user_agent = session
-            .req_header()
+    pub fn parse(session: &Session, listen_addr: core::net::SocketAddr, tls: bool) -> Result<Self, AppError> {
+        let headers = session.req_header();
+
+        let user_agent = headers
             .headers
             .get("User-Agent")
             .and_then(|h| h.to_str().ok())
@@ -188,32 +200,42 @@ impl RequestMetadata {
             .unwrap_or_default();
         debug!("Client SocketAddr: {}", client_addr);
 
-        let client_forwarded = session
-            .req_header()
+        let client_forwarded = headers
             .headers
             .get("X-Forwarded-For")
             .and_then(|h| h.to_str().ok())
             .map(|h| h.to_string());
-        debug!("Client Forwarded IP: {:?}", client_forwarded);
+        debug!("Client ForwardedIP: {:?}", client_forwarded);
 
-        let host = session
-            .req_header()
+        let host = headers
             .headers
             .get("Host")
             .and_then(|h| h.to_str().ok())
             .map(|h| h.to_string())
             .unwrap_or_default();
 
-        let method = session.req_header().method.as_str().to_string();
-        let uri = session.req_header().uri.path().to_string();
+        let method = headers.method.as_str().to_string();
+        let uri = headers.uri.path().to_string();
+        let scheme = tls.then(|| "https").unwrap_or("http").to_string();
+
+        let query = headers.uri.query();
+        let port = listen_addr.port();
+        debug!("PORT: {}", port);
+        let mut full_url = url::Url::parse(&format!("{}://{}:{}", scheme, host, port))?;
+        full_url.set_query(query);
+        full_url.set_path(&uri);
 
         Ok(Self {
             user_agent,
             client_ip: client_addr.parse()?,
             forwarded_ip: client_forwarded.map(|ip| ip.parse().ok()).flatten(),
+            full_url,
             host,
+            port,
             method,
             uri,
+            scheme,
+            query: query.unwrap_or_default().to_string(),
         })
     }
 }
@@ -418,7 +440,7 @@ impl PingoraService {
         if server.rewrite_rules.is_empty() {
             return;
         }
-
+        error!("rewrite");
         for rule in &server.rewrite_rules {
             let Ok(re) = Regex::new(&rule.pattern) else {
                 warn!("Invalid rewrite regex: {}", rule.pattern);
@@ -470,53 +492,30 @@ impl PingoraService {
         if server.redirect_rules.is_empty() {
             return Ok(false);
         }
-
+        debug!("META:BEFORE_REDIRECT: {}", metadata);
         for rule in &server.redirect_rules {
             let Ok(re) = Regex::new(&rule.pattern) else {
                 warn!("Invalid redirect regex: {}", rule.pattern);
                 continue;
             };
 
-            if re.is_match(&metadata.host) {
-                let target = re.replace(&metadata.host, rule.new.as_str()).to_string();
-                if target != metadata.host {
-                    info!("REDIRECT: {} -> {}", metadata.host, target);
-                    metadata.host = target.clone();
-                    let status_code = 301;
+            if re.is_match(metadata.full_url.as_str()) {
+                let target = re.replace(metadata.full_url.as_str(), rule.new.as_str()).to_string();
+                if target != metadata.full_url.as_str() {
+                    debug!("REDIRECT: {} -> {} (RULE: {} -> {})", metadata.full_url.as_str(), target, rule.pattern, rule.new);
 
-                    let mut resp = ResponseHeader::build(status_code, None)
+                    let mut resp = ResponseHeader::build(302, None)
                         .map_err(|e| {
                             error!("Failed to build redirect response: {}", e);
                             Error::explain(HTTPStatus(500), "Internal server error")
                         })?;
 
-                    resp.insert_header("Location", &target)
+                    resp.insert_header("Location", target)
                         .map_err(|e| {
                             error!("Failed to set Location header: {}", e);
                             Error::explain(HTTPStatus(500), "Internal server error")
                         })?;
 
-                    // Add cache-control headers to prevent caching of redirects
-                    if status_code == 302 {
-                        resp.insert_header("Cache-Control", "no-cache, no-store, must-revalidate")
-                            .map_err(|e| {
-                                error!("Failed to set Cache-Control header: {}", e);
-                                Error::explain(HTTPStatus(500), "Internal server error")
-                            })?;
-                        resp.insert_header("Pragma", "no-cache")
-                            .map_err(|e| {
-                                error!("Failed to set Pragma header: {}", e);
-                                Error::explain(HTTPStatus(500), "Internal server error")
-                            })?;
-                        resp.insert_header("Expires", "0")
-                            .map_err(|e| {
-                                error!("Failed to set Expires header: {}", e);
-                                Error::explain(HTTPStatus(500), "Internal server error")
-                            })?;
-                        resp.insert_header("Content-Length", "0".to_string())?;
-                    }
-
-                    // Write the response
                     session.write_response_header(Box::new(resp), true).await
                         .map_err(|e| {
                             error!("Failed to write redirect response: {}", e);
@@ -529,12 +528,11 @@ impl PingoraService {
                             Error::explain(HTTPStatus(500), "Internal server error")
                         })?;
 
-                    debug!("redirect finished");
+                    debug!("META:AFTER_REDIRECT: {}", metadata);
                     return Ok(true);
                 }
             }
         }
-        debug!("function finished");
         Ok(true)
     }
 }
@@ -560,6 +558,7 @@ impl ProxyHttp for PingoraService {
         };
 
         let mut peer = if let Some(server_config) = self.servers.get_server(&metadata.host) {
+            debug!("UPSTREAM: {}", server_config.upstream);
             Box::new(HttpPeer::new(
                 &server_config.upstream,
                 server_config.upstream_tls,
@@ -580,7 +579,7 @@ impl ProxyHttp for PingoraService {
         session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
-        let metadata = match RequestMetadata::parse(&session) {
+        let metadata = match RequestMetadata::parse(&session, self.listen_addr, self.tls) {
             Ok(h) => h,
             Err(e) => {
                 error!("{e}");

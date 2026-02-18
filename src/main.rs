@@ -14,7 +14,7 @@ use pingora::prelude::*;
 use pingora::server::configuration::ServerConf;
 use reqwest::Client;
 use std::collections::HashMap;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -68,7 +68,10 @@ fn init_pingora(
     let client = Client::builder().timeout(Duration::from_secs(3)).build()?;
 
     for (addr, HostConfig { tls, servers }) in config.hosts.into_iter() {
+        let addr: SocketAddr = addr.parse()?;
         let pproxy = PingoraService::new(
+            addr, 
+            tls,
             monitors.clone(),
             servers.clone(),
             geo_writer.clone(),
@@ -76,7 +79,7 @@ fn init_pingora(
             client.clone(),
             config.waf.clone(),
         );
-        let service = pproxy.build_service(server.configuration.clone(), addr, tls)?;
+        let service = pproxy.build_service(server.configuration.clone(), addr.to_string(), tls)?;
         server.add_service(service);
     }
 

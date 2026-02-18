@@ -90,6 +90,12 @@ impl From<pingora::BError> for AppError {
     }
 }
 
+impl From<url::ParseError> for AppError {
+    fn from(e: url::ParseError) -> Self {
+        Self::ParseError(e.to_string())
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let code = match self {
@@ -107,3 +113,4 @@ impl IntoResponse for AppError {
         }
     }
 }
+
