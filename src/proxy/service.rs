@@ -471,7 +471,6 @@ impl PingoraService {
             return Ok(false);
         }
 
-
         for rule in &server.redirect_rules {
             let Ok(re) = Regex::new(&rule.pattern) else {
                 warn!("Invalid redirect regex: {}", rule.pattern);
@@ -480,9 +479,9 @@ impl PingoraService {
 
             if re.is_match(&metadata.host) {
                 let target = re.replace(&metadata.host, rule.new.as_str()).to_string();
-
                 if target != metadata.host {
                     info!("REDIRECT: {} -> {}", metadata.host, target);
+                    metadata.host = target;
                     let status_code = 301;
 
                     let mut resp = ResponseHeader::build(status_code, None)
