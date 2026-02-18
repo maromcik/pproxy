@@ -1,14 +1,12 @@
 use crate::error::AppError;
 use crate::management::monitoring::monitor::MonitorState;
 use config::Config;
+use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::time::Duration;
-use ipnetwork::IpNetwork;
 use tracing::debug;
-
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Servers(pub HashMap<String, ServerConfig>);
@@ -85,10 +83,11 @@ impl RuleAction {
 
 impl IpRule {
     pub fn contains(&self, addr: Option<IpAddr>) -> bool {
-        if let Some(ip) = addr && self.subnet.contains(ip) {
+        if let Some(ip) = addr
+            && self.subnet.contains(ip)
+        {
             true
-        }
-        else {
+        } else {
             false
         }
     }

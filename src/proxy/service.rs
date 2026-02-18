@@ -1,4 +1,3 @@
-use regex::Regex;
 use crate::config::{IpSource, ServerConfig, Servers, WafConfig};
 use crate::error::AppError;
 use crate::management::monitoring::monitor::Monitors;
@@ -18,6 +17,7 @@ use pingora::protocols::tls::TlsRef;
 use pingora::server::configuration::ServerConf;
 use pingora::tls::ssl;
 use pingora::{Error, HTTPStatus, tls};
+use regex::Regex;
 use reqwest::Client;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
@@ -406,12 +406,7 @@ impl PingoraService {
         }
     }
 
-
-    async fn rewrite_request(
-        &self,
-        session: &mut Session,
-        ctx: &mut ProxyContext,
-    ) {
+    async fn rewrite_request(&self, session: &mut Session, ctx: &mut ProxyContext) {
         let Some(metadata) = ctx.metadata.as_mut() else {
             return;
         };
@@ -434,9 +429,9 @@ impl PingoraService {
                 let replaced = re.replace(&metadata.uri, rule.new.as_str()).to_string();
                 if replaced != metadata.uri {
                     debug!(
-                    "REWRITE: {} -> {} (RULE: {} -> {})",
-                    metadata.uri, replaced, rule.pattern, rule.new
-                );
+                        "REWRITE: {} -> {} (RULE: {} -> {})",
+                        metadata.uri, replaced, rule.pattern, rule.new
+                    );
                     metadata.uri = replaced;
                 } else {
                     return;
@@ -452,7 +447,6 @@ impl PingoraService {
             metadata.uri.clone()
         };
 
-
         match full_uri.parse() {
             Ok(uri) => req.set_uri(uri),
             Err(e) => {
@@ -460,7 +454,6 @@ impl PingoraService {
                 return;
             }
         }
-        debug!("rewritten")
     }
 }
 

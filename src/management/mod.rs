@@ -12,7 +12,11 @@ pub mod monitoring;
 pub mod templates;
 pub mod utils;
 
-pub async fn init_control(config: ControlConfig, monitors: Monitors, static_path: &str) -> Result<(), AppError> {
+pub async fn init_control(
+    config: ControlConfig,
+    monitors: Monitors,
+    static_path: &str,
+) -> Result<(), AppError> {
     let app = Router::new()
         .nest_service("/static", ServeDir::new(static_path))
         .route("/control/{name}", get(control_monitor))
