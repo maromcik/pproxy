@@ -455,6 +455,87 @@ impl PingoraService {
             }
         }
     }
+
+    async fn redirect_request(
+        &self,
+        session: &mut Session,
+        ctx: &mut ProxyContext,
+    ) -> pingora::Result<bool> {
+        let Some(metadata) = ctx.metadata.as_mut() else {
+            return Ok(false);
+        };
+        let Some(server) = self.servers.get_server(&metadata.host) else {
+            return Ok(false);
+        };
+        if server.redirect_rules.is_empty() {
+            return Ok(false);
+        }
+
+
+        for rule in &server.redirect_rules {
+            let Ok(re) = Regex::new(&rule.pattern) else {
+                warn!("Invalid redirect regex: {}", rule.pattern);
+                continue;
+            };
+
+            if re.is_match(&metadata.host) {
+                let target = re.replace(&metadata.host, rule.new.as_str()).to_string();
+
+                if target != metadata.host {
+                    info!("REDIRECT: {} -> {}", metadata.host, target);
+                    let status_code = 301;
+
+                    let mut resp = ResponseHeader::build(status_code, None)
+                        .map_err(|e| {
+                            error!("Failed to build redirect response: {}", e);
+                            Error::explain(HTTPStatus(500), "Internal server error")
+                        })?;
+
+                    resp.insert_header("Location", &target)
+                        .map_err(|e| {
+                            error!("Failed to set Location header: {}", e);
+                            Error::explain(HTTPStatus(500), "Internal server error")
+                        })?;
+
+                    // Add cache-control headers to prevent caching of redirects
+                    if status_code == 302 {
+                        resp.insert_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                            .map_err(|e| {
+                                error!("Failed to set Cache-Control header: {}", e);
+                                Error::explain(HTTPStatus(500), "Internal server error")
+                            })?;
+                        resp.insert_header("Pragma", "no-cache")
+                            .map_err(|e| {
+                                error!("Failed to set Pragma header: {}", e);
+                                Error::explain(HTTPStatus(500), "Internal server error")
+                            })?;
+                        resp.insert_header("Expires", "0")
+                            .map_err(|e| {
+                                error!("Failed to set Expires header: {}", e);
+                                Error::explain(HTTPStatus(500), "Internal server error")
+                            })?;
+                    }
+
+                    // Write the response
+                    session.write_response_header(Box::new(resp), false).await
+                        .map_err(|e| {
+                            error!("Failed to write redirect response: {}", e);
+                            Error::explain(HTTPStatus(500), "Internal server error")
+                        })?;
+
+                    session.write_response_body(None, true).await
+                        .map_err(|e| {
+                            error!("Failed to write redirect response body: {}", e);
+                            Error::explain(HTTPStatus(500), "Internal server error")
+                        })?;
+
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
 }
 
 #[async_trait]
@@ -518,7 +599,9 @@ impl ProxyHttp for PingoraService {
             return Ok(true);
         };
 
+        self.redirect_request(session, ctx).await;
         self.rewrite_request(session, ctx).await;
+
 
         if self.is_blocked(&metadata, server).await {
             info!("BLOCKED:REQ: {metadata}");
