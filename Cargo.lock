@@ -2089,6 +2089,7 @@ dependencies = [
  "log",
  "num_cpus",
  "pingora",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

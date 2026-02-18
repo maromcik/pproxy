@@ -49,6 +49,14 @@ pub struct ServerConfig {
     pub proxy_headers: HashMap<String, String>,
     #[serde(default)]
     pub monitor: Option<String>,
+    #[serde(default)]
+    pub rewrite_rules: Vec<RewriteRule>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RewriteRule {
+    pub pattern: String,
+    pub new: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

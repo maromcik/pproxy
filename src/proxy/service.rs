@@ -1,3 +1,4 @@
+use regex::Regex;
 use crate::config::{IpSource, ServerConfig, Servers, WafConfig};
 use crate::error::AppError;
 use crate::management::monitoring::monitor::Monitors;
@@ -404,6 +405,82 @@ impl PingoraService {
             _ => true,
         }
     }
+
+
+    async fn rewrite_request(
+        &self,
+        session: &mut Session,
+        ctx: &mut ProxyContext,
+    ) {
+        let Some(metadata) = ctx.metadata.as_mut() else {
+            return;
+        };
+
+        let Some(server) = self.servers.get_server(&metadata.host) else {
+            return;
+        };
+
+        if server.rewrite_rules.is_empty() {
+            return;
+        }
+
+        // match against host + path
+        let mut composite = format!("{}{}", metadata.host, metadata.uri);
+        let original = composite.clone();
+        let mut rewritten = false;
+
+        for rule in &server.rewrite_rules {
+            let Ok(re) = Regex::new(&rule.pattern) else {
+                warn!("Invalid rewrite regex: {}", rule.pattern);
+                continue;
+            };
+
+            if re.is_match(&composite) {
+                let replaced = re.replace(&composite, rule.new.as_str()).to_string();
+
+                if replaced != composite {
+                    debug!(
+                    "REWRITE: {} -> {} (/{}/ -> {})",
+                    composite, replaced, rule.pattern, rule.new
+                );
+                    composite = replaced;
+                    rewritten = true;
+                }
+            }
+        }
+
+        if !rewritten {
+            return;
+        }
+
+        let Some((new_host, new_path)) = composite.split_once('/') else {
+            warn!("Invalid rewrite result: {}", composite);
+            return;
+        };
+
+        let new_path = format!("/{}", new_path);
+
+        let req = session.req_header_mut();
+
+        let full_uri = if let Some(q) = req.uri.query() {
+            format!("{}?{}", new_path, q)
+        } else {
+            new_path.clone()
+        };
+
+
+        match full_uri.parse() {
+            Ok(uri) => req.set_uri(uri),
+            Err(e) => {
+                error!("URI rewrite failed: {}", e);
+                return;
+            }
+        }
+
+        if let Err(e) = req.insert_header("Host", new_host) {
+            error!("Host rewrite failed: {}", e);
+        }
+    }
 }
 
 #[async_trait]
@@ -464,6 +541,8 @@ impl ProxyHttp for PingoraService {
             );
             return Ok(true);
         };
+
+        self.rewrite_request(session, ctx).await;
 
         if self.is_blocked(&metadata, server).await {
             info!("BLOCKED:REQ: {metadata}");
