@@ -514,10 +514,11 @@ impl PingoraService {
                                 error!("Failed to set Expires header: {}", e);
                                 Error::explain(HTTPStatus(500), "Internal server error")
                             })?;
+                        resp.insert_header("Content-Length", "0".to_string())?;
                     }
 
                     // Write the response
-                    session.write_response_header(Box::new(resp), false).await
+                    session.write_response_header(Box::new(resp), true).await
                         .map_err(|e| {
                             error!("Failed to write redirect response: {}", e);
                             Error::explain(HTTPStatus(500), "Internal server error")
