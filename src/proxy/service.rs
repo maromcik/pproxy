@@ -481,7 +481,7 @@ impl PingoraService {
                 let target = re.replace(&metadata.host, rule.new.as_str()).to_string();
                 if target != metadata.host {
                     info!("REDIRECT: {} -> {}", metadata.host, target);
-                    metadata.host = target;
+                    metadata.host = target.clone();
                     let status_code = 301;
 
                     let mut resp = ResponseHeader::build(status_code, None)
