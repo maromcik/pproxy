@@ -599,9 +599,8 @@ impl ProxyHttp for PingoraService {
             return Ok(true);
         };
 
-        self.redirect_request(session, ctx).await;
         self.rewrite_request(session, ctx).await;
-
+        self.redirect_request(session, ctx).await;
 
         if self.is_blocked(&metadata, server).await {
             info!("BLOCKED:REQ: {metadata}");
