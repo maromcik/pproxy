@@ -529,12 +529,13 @@ impl PingoraService {
                             Error::explain(HTTPStatus(500), "Internal server error")
                         })?;
 
+                    debug!("redirect finished");
                     return Ok(true);
                 }
             }
         }
-
-        Ok(false)
+        debug!("function finished");
+        Ok(true)
     }
 }
 
