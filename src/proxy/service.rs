@@ -573,7 +573,7 @@ impl ProxyHttp for PingoraService {
         let keepalive = TcpKeepalive {
             idle: Duration::from_secs(5 * 60),
             interval: Duration::from_secs(60),
-            count: 1000,
+            count: 10,
             user_timeout: Default::default(),
         };
         peer.options.tcp_keepalive = Some(keepalive);
