@@ -50,7 +50,7 @@ fn init_pingora(
         threads: num_cpus::get(),
         listener_tasks_per_fd: 1,
         work_stealing: true,
-        upstream_keepalive_pool_size: 1000,
+        upstream_keepalive_pool_size: 2000,
         upstream_connect_offload_threadpools: None,
         upstream_connect_offload_thread_per_pool: None,
         grace_period_seconds: None,

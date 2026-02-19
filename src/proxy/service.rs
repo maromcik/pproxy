@@ -25,6 +25,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use pingora::protocols::TcpKeepalive;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::Instant;
@@ -569,6 +570,13 @@ impl ProxyHttp for PingoraService {
             ));
         };
         peer.options.connection_timeout = Some(Duration::from_secs(120));
+        let keepalive = TcpKeepalive {
+            idle: Duration::from_secs(5 * 60),
+            interval: Duration::from_secs(60),
+            count: 1000,
+            user_timeout: Default::default(),
+        };
+        peer.options.tcp_keepalive = Some(keepalive);
         Ok(peer)
     }
 
