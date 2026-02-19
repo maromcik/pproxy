@@ -50,7 +50,7 @@ fn init_pingora(
         threads: num_cpus::get(),
         listener_tasks_per_fd: 1,
         work_stealing: true,
-        upstream_keepalive_pool_size: 128,
+        upstream_keepalive_pool_size: 1000,
         upstream_connect_offload_threadpools: None,
         upstream_connect_offload_thread_per_pool: None,
         grace_period_seconds: None,
@@ -70,7 +70,7 @@ fn init_pingora(
     for (addr, HostConfig { tls, servers }) in config.hosts.into_iter() {
         let addr: SocketAddr = addr.parse()?;
         let pproxy = PingoraService::new(
-            addr, 
+            addr,
             tls,
             monitors.clone(),
             servers.clone(),
