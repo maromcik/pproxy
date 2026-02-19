@@ -26,3 +26,4 @@ tower-http = { version = "0.6.8", features = ["fs", "trace"] }
 axum = "0.8.8"
 regex = "1.12.2"
 url = "2.5.8"
+tracing-appender = "0.2.4"

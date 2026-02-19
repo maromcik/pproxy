@@ -20,6 +20,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 use tracing_subscriber::EnvFilter;
+use tracing_appender::non_blocking;
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -98,7 +99,9 @@ async fn main() -> Result<(), AppError> {
     debug!("Using config: {:?}", &config);
 
     let timer = tracing_subscriber::fmt::time::LocalTime::rfc_3339();
+    let (non_blocking, _non_blocking_guard) = non_blocking(std::io::stdout());
     tracing_subscriber::fmt()
+        .with_writer(non_blocking)
         .with_timer(timer)
         .with_target(true)
         .with_env_filter(env)
