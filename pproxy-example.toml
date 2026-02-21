@@ -1,49 +1,56 @@
-app_log_level = "debug"
-all_log_level = "error"
+app_log_level = "info"
+all_log_level = "warn"
+static_files_path = "/opt/systemd/pproxy/static"
 
 [control]
 listen = "0.0.0.0:5050"
 
 [waf]
-geo_cache_file_path = "cache"
-blocklist_url = "http://192.168.0.5:6060/blocklist"
+#blocklist_url = "http://192.168.0.10:6060/blocklist"
+geo_cache_file_path = "/opt/systemd/pproxy/geo_cache"
 geo_api_url = "https://api.iplocation.net?ip="
-
-[monitors.hp]
-suspend_timeout = 30
-
-[monitors.hp.commands]
-check_command = "ping -W 0.3 -c 1 192.168.0.10"
-wake_command = "ether-wake -i ens1 21:11:21:11:21:11"
-suspend_command = "ssh -o ConnectTimeout=1 root@192.168.0.32 systemctl suspend"
-status_command = "ssh -o ConnectTimeout=1 root@192.168.0.32 sh -c /root/sus-save.sh"
-
-[monitors.test]
-suspend_timeout = 30
-
-[monitors.test.commands]
-check_command = "ping -W 0.3 -c 1 192.168.0.32"
-wake_command = "echo pes"
-suspend_command = "ssh -o ConnectTimeout=1 root@192.168.0.32 systemctl suspend"
-status_command = "ssh -o ConnectTimeout=1 root@192.168.0.32 sh -c /root/sus-save.sh"
-
 
 [hosts."0.0.0.0:443"]
 tls = true
 
-[hosts."0.0.0.0:443".servers."example.server.com"]
+[hosts."0.0.0.0:443".servers."example.com"]
 upstream = "192.168.0.10:8000"
-user_agent_blocklist = ["cypex","scanning"]
-geo_fence_country_allowlist = ["uk", "de"]
-cert_path = "hafka.eu/cert.pem"
-key_path = "hafka.eu/privkey.pem"
-monitor = "test"
+upstream_tls = false
+# OPTIONAL, see below
+#monitor = "test"
+user_agent_blocklist = ["facebook", "scapy", "cypex", "scanning", "OAI-SearchBot", "YandexBot", "openai", "InternetMeasurement"]
+geo_fence_country_allowlist = ["SK", "CZ", "GB"]
+geo_fence_isp_blocklist = ["Amazon Data Services UK"]
+cert_path = "/etc/letsencrypt/live/example.com/fullchain.pem"
+key_path = "/etc/letsencrypt/live/example.com/privkey.pem"
+proxy_headers = { "Connection" = "upgrade" }
+redirect_rules = [
+    { pattern = "example.com", new = "new-example.com" }
+]
 
-[hosts."0.0.0.0:80"]
-tls = false
+rewrite_rules = [
+    { pattern = "path", new = "newpath" }
+]
+ip_rules = [
+    { source = "Direct", subnet = "192.168.0.0/21", action = "Allow" },
+    { source = "Direct", subnet = "0.0.0.0/0", action = "Deny" }
+]
 
-[hosts."0.0.0.0:80".servers."second.server.eu"]
-upstream = "192.168.0.32:8002"
-user_agent_blocklist = ["facebook"]
+[hosts."0.0.0.0:443".servers."example.com".headers]
+"X-Content-Type-Options" = "nosniff"
+"X-Frame-Options" = "SAMEORIGIN"
+"X-XSS-Protection" = "1; mode=block"
+"Strict-Transport-Security" = "max-age=31536000; includeSubDomains;"
 
+# OPTIONAL
+# This machine will be suspended after 300 seconds of no activity and woken up
+# when new requests are received.
+# Control panel for this monitor is available at IP:5050/control/test
+[monitors.test]
+suspend_timeout = 300
 
+[monitors.test.commands]
+check_command = "ping -W 0.3 -c 1 192.168.0.32"
+wake_command = "wakeonlan 3c:52:82:51:e4:59"
+suspend_command = "ssh -o ConnectTimeout=1 pproxy@192.168.0.32 sudo systemctl suspend -i"
+status_command = "ssh -o ConnectTimeout=1 pproxy@192.168.0.32 sudo sus-save"
