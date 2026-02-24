@@ -18,8 +18,10 @@ cache:
 
 build:
   stage: build
+  before_script:
+    - apt-get update && apt-get install -y cmake
+    - rustup default stable
   script:
-    - rustup default stable  # Set default toolchain first
     - cargo build --release
   rules:
     - if: '$CI_COMMIT_TAG'
