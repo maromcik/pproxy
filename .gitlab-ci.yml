@@ -7,6 +7,7 @@ stages:
 variables:
   CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
   RUSTUP_HOME: "${CI_PROJECT_DIR}/.rustup"
+  IMAGE_NAME: "$CI_REGISTRY_IMAGE"
 
 cache:
   key: ${CI_COMMIT_REF_SLUG}
@@ -31,6 +32,9 @@ build:
       - target/release/${CI_PROJECT_NAME}
     expire_in: 1 week
 
+
+
+
 build_docker:
   stage: build
   image:
@@ -38,21 +42,18 @@ build_docker:
     entrypoint: [""]
   before_script:
     - mkdir -p /kaniko/.docker
-    # Create Docker authentication for GitLab registry
     - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
   script:
     - |
+      TAG=${CI_COMMIT_TAG:-latest}
+
       /kaniko/executor \
         --context "${CI_PROJECT_DIR}" \
         --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
-        --destination "${IMAGE_NAME}:${CI_COMMIT_TAG}" \
-        --destination "${IMAGE_NAME}:latest" \
+        --destination "${IMAGE_NAME}:${TAG}" \
         --cache=true \
         --cache-ttl=168h \
         --verbosity=info
-  rules:
-    - if: '$CI_COMMIT_TAG'
-    - if: '$CI_PIPELINE_SOURCE == "web"'
 
 publish:
   stage: release
