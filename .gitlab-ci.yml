@@ -52,6 +52,7 @@ build_docker:
         --context "${CI_PROJECT_DIR}" \
         --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
         --destination "${IMAGE_NAME}:${TAG}" \
+        --destination "${IMAGE_NAME}:latest" \
         --cache=true \
         --cache-ttl=168h \
         --verbosity=info
