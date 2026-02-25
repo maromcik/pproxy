@@ -51,7 +51,7 @@ pub async fn control_monitor(
         Some("status") => {
             if let Some(stat_command) = &monitor.commands.status_command {
                 match call_script(stat_command).await {
-                    Ok(out) => Some(format!("{}", out)),
+                    Ok(out) => Some(out.to_string()),
                     Err(e) => Some(format!("Failed to execute command: {}", e)),
                 }
             } else {

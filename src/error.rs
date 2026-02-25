@@ -6,6 +6,7 @@ use std::fmt::Debug;
 use std::net::AddrParseError;
 use thiserror::Error;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Error, Clone)]
 pub enum AppError {
     #[error("command error: {0}")]
@@ -98,9 +99,7 @@ impl From<url::ParseError> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let code = match self {
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        };
+        let code = StatusCode::INTERNAL_SERVER_ERROR;
         let template = GenericError {
             code: code.as_u16(),
             status_code: code.to_string(),
@@ -113,4 +112,3 @@ impl IntoResponse for AppError {
         }
     }
 }
-

@@ -8,8 +8,8 @@ pub async fn call_script(script: &str) -> Result<String, AppError> {
 
     match output {
         Ok(o) => {
-            let out = String::from_utf8_lossy(&*o.stdout);
-            let err = String::from_utf8_lossy(&*o.stderr);
+            let out = String::from_utf8_lossy(&o.stdout);
+            let err = String::from_utf8_lossy(&o.stderr);
             if !o.status.success() {
                 debug!(
                     "script {} exited with non-zero status: {}",

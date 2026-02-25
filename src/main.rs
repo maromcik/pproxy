@@ -19,8 +19,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
-use tracing_subscriber::EnvFilter;
 use tracing_appender::non_blocking;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about, long_about = None)]

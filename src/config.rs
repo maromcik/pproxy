@@ -17,10 +17,10 @@ impl Servers {
     }
 }
 
-fn default_info<'a>() -> String {
+fn default_info() -> String {
     String::from("info")
 }
-fn default_static_files<'a>() -> String {
+fn default_static_files() -> String {
     String::from("static")
 }
 

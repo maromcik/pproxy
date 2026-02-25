@@ -93,7 +93,7 @@ impl GeoWriter {
                         continue;
                     }
                 };
-                json = json + "\n";
+                json += "\n";
                 if let Err(e) = self.file.write_all(json.as_bytes()).await {
                     warn!("could not write to file: {e}");
                 }
@@ -116,7 +116,9 @@ pub struct GeoData {
 
 impl GeoData {
     pub async fn load_geo_data(path: &str) -> Result<HashMap<IpAddr, GeoData>, AppError> {
-        let file = File::open(path).await?;
+        let file = File::open(path)
+            .await
+            .map_err(|e| AppError::IOError(format!("Cache file path {path} not found: {e}")))?;
         let reader = BufReader::new(file);
         let mut lines = reader.lines();
         let mut results: HashMap<IpAddr, GeoData> = HashMap::new();

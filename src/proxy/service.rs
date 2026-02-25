@@ -12,6 +12,7 @@ use pingora::http::{RequestHeader, ResponseHeader};
 use pingora::listeners::TlsAccept;
 use pingora::listeners::tls::TlsSettings;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session, http_proxy_service};
+use pingora::protocols::TcpKeepalive;
 use pingora::protocols::l4::socket::SocketAddr;
 use pingora::protocols::tls::TlsRef;
 use pingora::server::configuration::ServerConf;
@@ -25,7 +26,6 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use pingora::protocols::TcpKeepalive;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::Instant;
@@ -41,11 +41,13 @@ impl TlsSelector {
         let mut res = HashMap::new();
         for (sni, server) in servers.0.iter() {
             if let (Some(cert), Some(key)) = (server.cert_path.as_ref(), server.key_path.as_ref()) {
-                let cert_bytes = std::fs::read(cert)?;
+                let cert_bytes = std::fs::read(cert)
+                    .map_err(|e| AppError::IOError(format!("Certificate {cert} not found: {e}")))?;
                 let certs = tls::x509::X509::stack_from_pem(&cert_bytes)?;
 
                 let key_bytes = std::fs::read(key)?;
-                let key = tls::pkey::PKey::private_key_from_pem(&key_bytes)?;
+                let key = tls::pkey::PKey::private_key_from_pem(&key_bytes)
+                    .map_err(|e| AppError::IOError(format!("Key {key} not found: {e}")))?;
                 res.insert(sni.clone(), (certs, key));
             }
         }
@@ -62,17 +64,15 @@ impl TlsAccept for TlsSelector {
             return;
         };
         debug!("SNI provided: {}", sni_provided);
-        let Some((certs, key)) = self.0.get(
-            &sni_provided
-                .strip_prefix("www.")
-                .unwrap_or(&sni_provided)
-                .to_string(),
-        ) else {
+        let Some((certs, key)) = self
+            .0
+            .get(sni_provided.strip_prefix("www.").unwrap_or(sni_provided))
+        else {
             warn!("No certificate found for SNI: {}", sni_provided);
             return;
         };
 
-        let Some(cert) = certs.get(0) else {
+        let Some(cert) = certs.first() else {
             warn!(
                 "Leaf certificate for SNI: {} could not be loaded",
                 sni_provided
@@ -109,6 +109,7 @@ pub struct PingoraService {
 }
 
 impl PingoraService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         listen_addr: core::net::SocketAddr,
         tls: bool,
@@ -176,13 +177,20 @@ impl Display for RequestMetadata {
         write!(
             f,
             "{} -- {} {} '{}'",
-            self.client_ip, self.method, self.full_url.as_str(), self.user_agent
+            self.client_ip,
+            self.method,
+            self.full_url.as_str(),
+            self.user_agent
         )
     }
 }
 
 impl RequestMetadata {
-    pub fn parse(session: &Session, listen_addr: core::net::SocketAddr, tls: bool) -> Result<Self, AppError> {
+    pub fn parse(
+        session: &Session,
+        listen_addr: core::net::SocketAddr,
+        tls: bool,
+    ) -> Result<Self, AppError> {
         let headers = session.req_header();
 
         let user_agent = headers
@@ -217,7 +225,7 @@ impl RequestMetadata {
 
         let method = headers.method.as_str().to_string();
         let uri = headers.uri.path().to_string();
-        let scheme = tls.then(|| "https").unwrap_or("http").to_string();
+        let scheme = if tls { "https" } else { "http" }.to_string();
 
         let query = headers.uri.query();
         let port = listen_addr.port();
@@ -228,7 +236,7 @@ impl RequestMetadata {
         Ok(Self {
             user_agent,
             client_ip: client_addr.parse()?,
-            forwarded_ip: client_forwarded.map(|ip| ip.parse().ok()).flatten(),
+            forwarded_ip: client_forwarded.and_then(|ip| ip.parse().ok()),
             full_url,
             host,
             port,
@@ -288,20 +296,8 @@ impl PingoraService {
 
     fn is_private(&self, metadata: &RequestMetadata) -> bool {
         match metadata.client_ip {
-            IpAddr::V4(ipv4) => {
-                if ipv4.is_private() {
-                    true
-                } else {
-                    false
-                }
-            }
-            IpAddr::V6(ipv6) => {
-                if ipv6.is_unique_local() {
-                    true
-                } else {
-                    false
-                }
-            }
+            IpAddr::V4(ipv4) => ipv4.is_private(),
+            IpAddr::V6(ipv6) => ipv6.is_unique_local(),
         }
     }
 
@@ -399,13 +395,15 @@ impl PingoraService {
             return false;
         }
 
-        if let Some(user_agent_blocklist) = &server.user_agent_blocklist {
-            if user_agent_blocklist.iter().any(|ua| {
+        if let Some(user_agent_blocklist) = &server.user_agent_blocklist
+            && user_agent_blocklist.iter().any(|ua| {
                 metadata
                     .user_agent
                     .to_lowercase()
                     .contains(ua.to_lowercase().as_str())
-            }) {
+            })
+        {
+            {
                 let blocklist_data = BlocklistIp {
                     ip: IpNetwork::from(metadata.client_ip),
                     country_code: None,
@@ -473,7 +471,6 @@ impl PingoraService {
             Ok(uri) => req.set_uri(uri),
             Err(e) => {
                 error!("URI rewrite failed: {}", e);
-                return;
             }
         }
     }
@@ -500,33 +497,40 @@ impl PingoraService {
             };
 
             if re.is_match(metadata.full_url.as_str()) {
-                let target = re.replace(metadata.full_url.as_str(), rule.new.as_str()).to_string();
+                let target = re
+                    .replace(metadata.full_url.as_str(), rule.new.as_str())
+                    .to_string();
                 if target != metadata.full_url.as_str() {
-                    debug!("REDIRECT: {} -> {} (RULE: {} -> {})", metadata.full_url.as_str(), target, rule.pattern, rule.new);
+                    debug!(
+                        "REDIRECT: {} -> {} (RULE: {} -> {})",
+                        metadata.full_url.as_str(),
+                        target,
+                        rule.pattern,
+                        rule.new
+                    );
 
-                    let mut resp = ResponseHeader::build(302, None)
-                        .map_err(|e| {
-                            error!("Failed to build redirect response: {}", e);
-                            Error::explain(HTTPStatus(500), "Internal server error")
-                        })?;
+                    let mut resp = ResponseHeader::build(302, None).map_err(|e| {
+                        error!("Failed to build redirect response: {}", e);
+                        Error::explain(HTTPStatus(500), "Internal server error")
+                    })?;
 
-                    resp.insert_header("Location", target)
-                        .map_err(|e| {
-                            error!("Failed to set Location header: {}", e);
-                            Error::explain(HTTPStatus(500), "Internal server error")
-                        })?;
+                    resp.insert_header("Location", target).map_err(|e| {
+                        error!("Failed to set Location header: {}", e);
+                        Error::explain(HTTPStatus(500), "Internal server error")
+                    })?;
 
-                    session.write_response_header(Box::new(resp), true).await
+                    session
+                        .write_response_header(Box::new(resp), true)
+                        .await
                         .map_err(|e| {
                             error!("Failed to write redirect response: {}", e);
                             Error::explain(HTTPStatus(500), "Internal server error")
                         })?;
 
-                    session.write_response_body(None, true).await
-                        .map_err(|e| {
-                            error!("Failed to write redirect response body: {}", e);
-                            Error::explain(HTTPStatus(500), "Internal server error")
-                        })?;
+                    session.write_response_body(None, true).await.map_err(|e| {
+                        error!("Failed to write redirect response body: {}", e);
+                        Error::explain(HTTPStatus(500), "Internal server error")
+                    })?;
 
                     return Ok(true);
                 }
@@ -585,7 +589,7 @@ impl ProxyHttp for PingoraService {
         session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
-        let metadata = match RequestMetadata::parse(&session, self.listen_addr, self.tls) {
+        let metadata = match RequestMetadata::parse(session, self.listen_addr, self.tls) {
             Ok(h) => h,
             Err(e) => {
                 error!("{e}");
