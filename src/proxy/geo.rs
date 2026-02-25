@@ -74,12 +74,13 @@ impl GeoWriter {
     pub async fn open(
         path: &str,
         rx: tokio::sync::mpsc::Receiver<GeoData>,
-    ) -> Result<Self, std::io::Error> {
+    ) -> Result<Self, AppError> {
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
-            .await?;
+            .await
+            .map_err(|e| AppError::IOError(format!("Cache file path {path} not found: {e}")))?;
         Ok(Self { file, rx })
     }
 
