@@ -25,8 +25,8 @@ use tracing_subscriber::EnvFilter;
 #[derive(Debug, Parser)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
-    /// Optional `.env` file path for loading environment variables.
-    #[clap(short, long, value_name = "CONFIG_FILE", default_value = "pproxy.toml")]
+    /// Optional path to a `YAML or TOML` with configuration.
+    #[clap(short, long, value_name = "CONFIG_FILE", default_value = "pproxy.yaml")]
     config: String,
 }
 
