@@ -17,6 +17,7 @@ use pingora::protocols::l4::socket::SocketAddr;
 use pingora::protocols::tls::TlsRef;
 use pingora::server::configuration::ServerConf;
 use pingora::tls::ssl;
+use pingora::utils::tls::CertKey;
 use pingora::{Error, HTTPStatus, tls};
 use regex::Regex;
 use reqwest::Client;
@@ -26,16 +27,13 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use pingora::utils::tls::CertKey;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::Instant;
 use tracing::{debug, error, trace, warn};
 
 #[derive(Debug, Clone)]
-pub struct TlsSelector(
-    HashMap<String, CertKey>,
-);
+pub struct TlsSelector(HashMap<String, CertKey>);
 
 impl TlsSelector {
     pub fn new(servers: Servers) -> Result<Self, AppError> {
@@ -73,7 +71,7 @@ impl TlsAccept for TlsSelector {
             warn!("No certificate found for SNI: {}", sni_provided);
             return;
         };
-        
+
         if let Err(e) = tls::ext::ssl_use_certificate(ssl, certs.leaf()) {
             error!("Could not add leaf cert: {}", e);
         }

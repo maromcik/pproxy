@@ -1,6 +1,6 @@
 /target
 pproxy.*
-
+.idea
 certs
 cache
 geo_cache
