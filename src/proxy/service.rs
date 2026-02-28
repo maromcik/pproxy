@@ -26,6 +26,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use pingora::utils::tls::CertKey;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::Instant;
@@ -33,7 +34,7 @@ use tracing::{debug, error, trace, warn};
 
 #[derive(Debug, Clone)]
 pub struct TlsSelector(
-    HashMap<String, (Vec<tls::x509::X509>, tls::pkey::PKey<tls::pkey::Private>)>,
+    HashMap<String, CertKey>,
 );
 
 impl TlsSelector {
@@ -48,7 +49,8 @@ impl TlsSelector {
                 let key_bytes = std::fs::read(key)?;
                 let key = tls::pkey::PKey::private_key_from_pem(&key_bytes)
                     .map_err(|e| AppError::IOError(format!("Key {key} not found: {e}")))?;
-                res.insert(sni.clone(), (certs, key));
+                let pair = CertKey::new(certs, key);
+                res.insert(sni.clone(), pair);
             }
         }
 
@@ -64,33 +66,25 @@ impl TlsAccept for TlsSelector {
             return;
         };
         debug!("SNI provided: {}", sni_provided);
-        let Some((certs, key)) = self
+        let Some(certs) = self
             .0
             .get(sni_provided.strip_prefix("www.").unwrap_or(sni_provided))
         else {
             warn!("No certificate found for SNI: {}", sni_provided);
             return;
         };
-
-        let Some(cert) = certs.first() else {
-            warn!(
-                "Leaf certificate for SNI: {} could not be loaded",
-                sni_provided
-            );
-            return;
-        };
-
-        if let Err(e) = tls::ext::ssl_use_certificate(ssl, cert) {
+        
+        if let Err(e) = tls::ext::ssl_use_certificate(ssl, certs.leaf()) {
             error!("Could not add leaf cert: {}", e);
         }
 
-        for (i, cert) in certs.iter().skip(1).enumerate() {
+        for (i, cert) in certs.intermediates().iter().enumerate() {
             if let Err(e) = tls::ext::ssl_add_chain_cert(ssl, cert) {
                 error!("Could not add intermediate cert {}: {}", i, e);
             }
         }
 
-        if let Err(e) = tls::ext::ssl_use_private_key(ssl, key) {
+        if let Err(e) = tls::ext::ssl_use_private_key(ssl, certs.key()) {
             error!("Could not set private key: {}", e);
         }
     }
