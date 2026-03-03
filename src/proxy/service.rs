@@ -637,7 +637,7 @@ impl ProxyHttp for PingoraService {
                     ),
                 );
                 monitor.wake_up.store(true, Ordering::Release);
-                "The server is starting, the page will be refreshing automatically until you are redirected to immich/jellyfin. If not, try refreshing the page manually after about 10 seconds."
+                "The server is starting, the page will be refreshing automatically until you are redirected to the requested website. If not, try refreshing the page manually after about 10 seconds."
             }
             (false, true) => {
                 info!("REQ:DISABLED:ATTEMPT: {metadata}");
