@@ -38,7 +38,7 @@ pub struct TlsSelector(HashMap<String, CertKey>);
 impl TlsSelector {
     pub fn new(servers: &ServersWithLoadBalancers) -> Result<Self, AppError> {
         let mut res = HashMap::new();
-        for (sni, server) in servers.0.iter() {
+        for (sni, server) in &servers.0 {
             if let (Some(cert), Some(key)) = (
                 server.server_config.cert_path.as_ref(),
                 server.server_config.key_path.as_ref(),
@@ -137,7 +137,8 @@ impl PingoraService {
         let mut service = http_proxy_service(&server_conf.clone(), self);
 
         if tls {
-            let tls_settings = TlsSettings::with_callbacks(selector.clone())?;
+            let mut tls_settings = TlsSettings::with_callbacks(selector.clone())?;
+            tls_settings.enable_h2();
             service.add_tls_with_settings(host.as_str(), None, tls_settings);
         } else {
             service.add_tcp(host.as_str())
@@ -224,6 +225,7 @@ impl RequestMetadata {
 
         let query = headers.uri.query();
         let port = listen_addr.port();
+        warn!("{} {} {} {}", client_addr, method, uri, port);
         let mut full_url = url::Url::parse(&format!("{}://{}:{}", scheme, host, port))?;
         full_url.set_query(query);
         full_url.set_path(&uri);
