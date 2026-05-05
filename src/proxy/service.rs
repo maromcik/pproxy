@@ -1,4 +1,4 @@
-use crate::config::{IpSource, ServerConfig, Servers, WafConfig};
+use crate::config::{IpSource, ServerConfig, ServersWithLoadBalancers, WafConfig};
 use crate::error::AppError;
 use crate::management::monitoring::monitor::Monitors;
 use crate::management::templates::templates::PublicPageTemplate;
@@ -36,10 +36,13 @@ use tracing::{debug, error, trace, warn};
 pub struct TlsSelector(HashMap<String, CertKey>);
 
 impl TlsSelector {
-    pub fn new(servers: Servers) -> Result<Self, AppError> {
+    pub fn new(servers: &ServersWithLoadBalancers) -> Result<Self, AppError> {
         let mut res = HashMap::new();
         for (sni, server) in servers.0.iter() {
-            if let (Some(cert), Some(key)) = (server.cert_path.as_ref(), server.key_path.as_ref()) {
+            if let (Some(cert), Some(key)) = (
+                server.server_config.cert_path.as_ref(),
+                server.server_config.key_path.as_ref(),
+            ) {
                 let cert_bytes = std::fs::read(cert)
                     .map_err(|e| AppError::IOError(format!("Certificate {cert} not found: {e}")))?;
                 let certs = tls::x509::X509::stack_from_pem(&cert_bytes)?;
@@ -92,7 +95,7 @@ pub struct PingoraService {
     pub listen_addr: core::net::SocketAddr,
     pub tls: bool,
     pub monitors: Monitors,
-    pub servers: Servers,
+    pub servers: ServersWithLoadBalancers,
     pub waf_config: WafConfig,
     pub geo_fence: RwLock<HashMap<IpAddr, GeoData>>,
     pub geo_api_client: Mutex<Client>,
@@ -106,7 +109,7 @@ impl PingoraService {
         listen_addr: core::net::SocketAddr,
         tls: bool,
         monitors: Monitors,
-        servers: Servers,
+        servers: ServersWithLoadBalancers,
         geo_cache_writer: mpsc::Sender<GeoData>,
         geo_cache_data: HashMap<IpAddr, GeoData>,
         client: Client,
@@ -130,11 +133,12 @@ impl PingoraService {
         host: String,
         tls: bool,
     ) -> Result<impl pingora::services::Service, AppError> {
-        let selector = Box::new(TlsSelector::new(self.servers.clone())?);
+        let selector = Box::new(TlsSelector::new(&self.servers)?);
         let mut service = http_proxy_service(&server_conf.clone(), self);
 
         if tls {
-            let tls_settings = TlsSettings::with_callbacks(selector.clone())?;
+            let mut tls_settings = TlsSettings::with_callbacks(selector.clone())?;
+            tls_settings.enable_h2();
             service.add_tls_with_settings(host.as_str(), None, tls_settings);
         } else {
             service.add_tcp(host.as_str())
@@ -308,21 +312,20 @@ impl PingoraService {
     async fn is_blocked_ip_geolocation(
         &self,
         metadata: &RequestMetadata,
-        server_config: &ServerConfig,
+        server: &ServerConfig,
     ) -> Result<bool, AppError> {
-        if server_config.geo_fence_isp_blocklist.is_none()
-            && server_config.geo_fence_country_allowlist.is_none()
+        if server.geo_fence_isp_blocklist.is_none() && server.geo_fence_country_allowlist.is_none()
         {
             debug!("empty geo fence allowlist");
             return Ok(false);
         };
 
-        if let Some(blocked) = self.check_geo_cache(metadata, server_config).await {
+        if let Some(blocked) = self.check_geo_cache(metadata, server).await {
             return Ok(blocked);
         }
 
         let client = self.geo_api_client.lock().await;
-        if let Some(blocked) = self.check_geo_cache(metadata, server_config).await {
+        if let Some(blocked) = self.check_geo_cache(metadata, server).await {
             return Ok(blocked);
         }
         let data = client
@@ -337,7 +340,7 @@ impl PingoraService {
             .map_err(|e| AppError::ParseError(format!("{e}")))?;
         let mut fence = self.geo_fence.write().await;
         let geo_data = fence.entry(metadata.client_ip).or_insert(data.clone());
-        let blocked = self.is_geo_data_blocked(geo_data, server_config);
+        let blocked = self.is_geo_data_blocked(geo_data, server);
         if blocked {
             warn!("BLOCKED:GEO; LOC <{geo_data}>; REQ <{metadata}>");
             let blocklist_data = BlocklistIp {
@@ -418,7 +421,7 @@ impl PingoraService {
         }
     }
 
-    async fn rewrite_request(&self, session: &mut Session, ctx: &mut ProxyContext) {
+    fn rewrite_request(&self, session: &mut Session, ctx: &mut ProxyContext) {
         let Some(metadata) = ctx.metadata.as_mut() else {
             return;
         };
@@ -427,11 +430,11 @@ impl PingoraService {
             return;
         };
 
-        if server.rewrite_rules.is_empty() {
+        if server.server_config.rewrite_rules.is_empty() {
             return;
         }
 
-        for rule in &server.rewrite_rules {
+        for rule in &server.server_config.rewrite_rules {
             let Ok(re) = Regex::new(&rule.pattern) else {
                 warn!("Invalid rewrite regex: {}", rule.pattern);
                 continue;
@@ -478,11 +481,11 @@ impl PingoraService {
         let Some(server) = self.servers.get_server(&metadata.host) else {
             return Ok(false);
         };
-        if server.redirect_rules.is_empty() {
+        if server.server_config.redirect_rules.is_empty() {
             return Ok(false);
         }
 
-        for rule in &server.redirect_rules {
+        for rule in &server.server_config.redirect_rules {
             let Ok(re) = Regex::new(&rule.pattern) else {
                 warn!("Invalid redirect regex: {}", rule.pattern);
                 continue;
@@ -552,27 +555,66 @@ impl ProxyHttp for PingoraService {
             ));
         };
 
-        let mut peer = if let Some(server_config) = self.servers.get_server(&metadata.host) {
-            debug!("UPSTREAM: {}", server_config.upstream);
-            Box::new(HttpPeer::new(
-                &server_config.upstream,
-                server_config.upstream_tls,
-                "".to_string(),
-            ))
-        } else {
+        let Some(server) = self.servers.get_server(&metadata.host) else {
             return Err(Error::explain(
-                HTTPStatus(404),
+                HTTPStatus(502),
                 "Server name not supported by pproxy",
             ));
         };
-        peer.options.connection_timeout = Some(Duration::from_secs(120));
-        let keepalive = TcpKeepalive {
-            idle: Duration::from_secs(5 * 60),
-            interval: Duration::from_secs(60),
-            count: 10,
-            user_timeout: Default::default(),
+
+        let Some(upstream) = server.lb.select(b"", 256) else {
+            return Err(Error::explain(
+                HTTPStatus(502),
+                "Server name could not be selected",
+            ));
         };
-        peer.options.tcp_keepalive = Some(keepalive);
+
+        let Some(upstream_config) = server
+            .server_config
+            .upstreams
+            .get(&upstream.addr.to_string())
+        else {
+            return Err(Error::explain(
+                HTTPStatus(502),
+                "Server name could not be selected",
+            ));
+        };
+
+        debug!("Upstream: {}", upstream.addr);
+        let mut peer = Box::new(HttpPeer::new(
+            &upstream,
+            upstream_config.tls,
+            String::default(),
+        ));
+
+        peer.options.connection_timeout = upstream_config
+            .connection_timeout
+            .or_else(|| Some(Duration::from_mins(2)));
+        peer.options.tcp_keepalive = Some(TcpKeepalive::from(
+            upstream_config.tcp_keep_alive.clone().unwrap_or_default(),
+        ));
+        if let Some(read_timeout) = upstream_config.read_timeout {
+            peer.options.read_timeout = Some(read_timeout);
+        }
+        if let Some(write_timeout) = upstream_config.write_timeout {
+            peer.options.write_timeout = Some(write_timeout);
+        }
+        if let Some(idle_timeout) = upstream_config.idle_timeout {
+            peer.options.idle_timeout = Some(idle_timeout);
+        }
+
+        if let Some(total_connection_timeout) = upstream_config.total_connection_timeout {
+            peer.options.total_connection_timeout = Some(total_connection_timeout);
+        }
+
+        if let Some(tcp_recv_buf) = upstream_config.tcp_recv_buf {
+            peer.options.tcp_recv_buf = Some(tcp_recv_buf);
+        }
+
+        if let Some(tcp_fast_open) = upstream_config.tcp_fast_open {
+            peer.options.tcp_fast_open = tcp_fast_open;
+        }
+
         Ok(peer)
     }
 
@@ -601,20 +643,21 @@ impl ProxyHttp for PingoraService {
             return Ok(true);
         };
 
-        self.rewrite_request(session, ctx).await;
+        self.rewrite_request(session, ctx);
 
         if self.redirect_request(session, ctx).await? {
             session.set_keepalive(None);
             return Ok(true);
         }
 
-        if self.is_blocked(&metadata, server).await {
+        if self.is_blocked(&metadata, &server.server_config).await {
             info!("BLOCKED:REQ: {metadata}");
             session.set_keepalive(None);
             return Ok(true);
         }
 
         let Some(monitor) = server
+            .server_config
             .monitor
             .as_ref()
             .and_then(|key| self.monitors.get(key))
@@ -719,14 +762,14 @@ impl ProxyHttp for PingoraService {
             return Ok(());
         };
 
-        let scheme = if server.cert_path.is_some() {
+        let scheme = if server.server_config.cert_path.is_some() {
             "https"
         } else {
             "http"
         };
         upstream_request.insert_header("X-Forwarded-Proto", scheme)?;
 
-        for (k, v) in server.proxy_headers.iter() {
+        for (k, v) in &server.server_config.proxy_headers {
             upstream_request.insert_header(k.clone(), v)?;
         }
 
@@ -750,7 +793,7 @@ impl ProxyHttp for PingoraService {
             return Ok(());
         };
 
-        for (k, v) in server.headers.iter() {
+        for (k, v) in &server.server_config.headers {
             upstream_response.insert_header(k.clone(), v)?;
         }
 

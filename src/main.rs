@@ -3,7 +3,7 @@ mod error;
 mod management;
 mod proxy;
 
-use crate::config::{AppConfig, HostConfig};
+use crate::config::{AppConfig, HostConfig, ServerLoadBalancer, ServersWithLoadBalancers};
 use crate::error::AppError;
 use crate::management::init_control;
 use crate::management::monitoring::monitor::{MonitorState, Monitors};
@@ -68,19 +68,27 @@ fn init_pingora(
 
     let client = Client::builder().timeout(Duration::from_secs(3)).build()?;
 
-    for (addr, HostConfig { tls, servers }) in config.hosts.into_iter() {
+    for (addr, HostConfig { tls, servers }) in config.hosts {
         let addr: SocketAddr = addr.parse()?;
+        let mut servers_with_load_balancers = HashMap::new();
+
+        for (sni, srv) in servers.0 {
+            let (runtime_config, background) = ServerLoadBalancer::from_config(srv)?;
+            server.add_service(background);
+            servers_with_load_balancers.insert(sni, runtime_config);
+        }
         let pproxy = PingoraService::new(
             addr,
             tls,
             monitors.clone(),
-            servers.clone(),
+            ServersWithLoadBalancers(servers_with_load_balancers),
             geo_writer.clone(),
             geo_cache_data.clone(),
             client.clone(),
             config.waf.clone(),
         );
         let service = pproxy.build_service(server.configuration.clone(), addr.to_string(), tls)?;
+
         server.add_service(service);
     }
 
