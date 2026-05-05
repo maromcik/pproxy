@@ -137,8 +137,7 @@ impl PingoraService {
         let mut service = http_proxy_service(&server_conf.clone(), self);
 
         if tls {
-            let mut tls_settings = TlsSettings::with_callbacks(selector.clone())?;
-            tls_settings.enable_h2();
+            let tls_settings = TlsSettings::with_callbacks(selector.clone())?;
             service.add_tls_with_settings(host.as_str(), None, tls_settings);
         } else {
             service.add_tcp(host.as_str())
