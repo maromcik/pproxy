@@ -562,7 +562,7 @@ impl ProxyHttp for PingoraService {
             ));
         };
 
-        let Some(upstream) = server.lb.select(b"", 256) else {
+        let Some(upstream) = server.lb.select(format!("{};{}", metadata.client_ip, metadata.host).as_bytes(), 256) else {
             return Err(Error::explain(
                 HTTPStatus(502),
                 "Server name could not be selected",

@@ -3,7 +3,8 @@ use crate::management::monitoring::monitor::MonitorState;
 use config::Config;
 use ipnetwork::IpNetwork;
 use pingora::lb::LoadBalancer;
-use pingora::prelude::{RoundRobin, TcpHealthCheck, background_service};
+use pingora::lb::selection::Consistent;
+use pingora::prelude::{TcpHealthCheck, background_service};
 use pingora::protocols::l4::ext::TcpKeepalive;
 use pingora::services::background::GenBackgroundService;
 use serde::{Deserialize, Serialize};
@@ -58,19 +59,19 @@ pub struct ServerConfig {
 }
 
 pub struct ServerLoadBalancer {
-    pub lb: Arc<LoadBalancer<RoundRobin>>,
+    pub lb: Arc<LoadBalancer<Consistent>>,
     pub server_config: ServerConfig,
 }
 
 impl ServerLoadBalancer {
     pub fn from_config(
         value: ServerConfig,
-    ) -> Result<(Self, GenBackgroundService<LoadBalancer<RoundRobin>>), AppError> {
+    ) -> Result<(Self, GenBackgroundService<LoadBalancer<Consistent>>), AppError> {
         let mut lb = LoadBalancer::try_from_iter(value.upstreams.keys().map(String::from))?;
         lb.set_health_check(TcpHealthCheck::new());
         lb.health_check_frequency = Some(Duration::from_secs(1));
         let background = background_service("health check", lb);
-        let lb: Arc<LoadBalancer<RoundRobin>> = background.task();
+        let lb: Arc<LoadBalancer<Consistent>> = background.task();
         let config = Self {
             lb,
             server_config: value,
