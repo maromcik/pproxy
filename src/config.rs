@@ -34,6 +34,8 @@ fn default_static_files() -> String {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ServerConfig {
     pub upstreams: HashMap<String, UpstreamConfig>,
+    #[serde(default, with = "humantime_serde")]
+    pub lb_timeout: Option<Duration>,
     #[serde(default)]
     pub cert_path: Option<String>,
     #[serde(default)]
@@ -69,7 +71,7 @@ impl ServerLoadBalancer {
     ) -> Result<(Self, GenBackgroundService<LoadBalancer<Consistent>>), AppError> {
         let mut lb = LoadBalancer::try_from_iter(value.upstreams.keys().map(String::from))?;
         lb.set_health_check(TcpHealthCheck::new());
-        lb.health_check_frequency = Some(Duration::from_secs(1));
+        lb.health_check_frequency = value.lb_timeout.or_else(|| Some(Duration::from_secs(1)));
         let background = background_service("health check", lb);
         let lb: Arc<LoadBalancer<Consistent>> = background.task();
         let config = Self {
