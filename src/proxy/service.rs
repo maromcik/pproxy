@@ -166,14 +166,16 @@ struct RequestMetadata {
     uri: String,
     scheme: String,
     query: String,
+    version: String,
 }
 
 impl Display for RequestMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} -- {} {} '{}'",
+            "{} -- {} {} {} '{}'",
             self.client_ip,
+            self.version,
             self.method,
             self.full_url.as_str(),
             self.user_agent
@@ -193,7 +195,7 @@ impl RequestMetadata {
             .headers
             .get("User-Agent")
             .and_then(|h| h.to_str().ok())
-            .map(|h| h.to_string())
+            .map(String::from)
             .unwrap_or_default();
 
         let client_addr = session
@@ -209,23 +211,26 @@ impl RequestMetadata {
             .headers
             .get("X-Forwarded-For")
             .and_then(|h| h.to_str().ok())
-            .map(|h| h.to_string());
+            .map(String::from);
         debug!("Client ForwardedIP: {:?}", client_forwarded);
-
         let host = headers
             .headers
             .get("Host")
             .and_then(|h| h.to_str().ok())
-            .map(|h| h.to_string())
+            .map(str::to_string)
+            .or_else(|| {
+                headers
+                    .uri
+                    .authority()
+                    .map(|a| a.as_str().to_string())
+            })
             .unwrap_or_default();
 
         let method = headers.method.as_str().to_string();
         let uri = headers.uri.path().to_string();
         let scheme = if tls { "https" } else { "http" }.to_string();
-
         let query = headers.uri.query();
         let port = listen_addr.port();
-        warn!("{} {} {} {}", client_addr, method, uri, port);
         let mut full_url = url::Url::parse(&format!("{}://{}:{}", scheme, host, port))?;
         full_url.set_query(query);
         full_url.set_path(&uri);
@@ -241,7 +246,9 @@ impl RequestMetadata {
             uri,
             scheme,
             query: query.unwrap_or_default().to_string(),
+            version: format!("{:?}", session.req_header().version)
         })
+
     }
 }
 
