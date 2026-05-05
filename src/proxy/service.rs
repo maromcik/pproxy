@@ -218,12 +218,7 @@ impl RequestMetadata {
             .get("Host")
             .and_then(|h| h.to_str().ok())
             .map(str::to_string)
-            .or_else(|| {
-                headers
-                    .uri
-                    .authority()
-                    .map(|a| a.as_str().to_string())
-            })
+            .or_else(|| headers.uri.authority().map(|a| a.as_str().to_string()))
             .unwrap_or_default();
 
         let method = headers.method.as_str().to_string();
@@ -246,9 +241,8 @@ impl RequestMetadata {
             uri,
             scheme,
             query: query.unwrap_or_default().to_string(),
-            version: format!("{:?}", session.req_header().version)
+            version: format!("{:?}", session.req_header().version),
         })
-
     }
 }
 
