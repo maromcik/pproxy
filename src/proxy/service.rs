@@ -226,7 +226,7 @@ impl RequestMetadata {
         let scheme = if tls { "https" } else { "http" }.to_string();
         let query = headers.uri.query();
         let port = listen_addr.port();
-        let mut full_url = url::Url::parse(&format!("{}://{}:{}", scheme, host, port))?;
+        let mut full_url = url::Url::parse(&format!("{scheme}://{host}"))?;
         full_url.set_query(query);
         full_url.set_path(&uri);
 
