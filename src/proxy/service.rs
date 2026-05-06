@@ -361,7 +361,7 @@ impl PingoraService {
         Ok(blocked)
     }
 
-    async fn is_blocked_by_rules(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
+    fn is_blocked_by_rules(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
         let Some(rules) = server.ip_rules.as_ref() else {
             return false;
         };
@@ -383,7 +383,7 @@ impl PingoraService {
     }
 
     async fn is_blocked(&self, metadata: &RequestMetadata, server: &ServerConfig) -> bool {
-        if self.is_blocked_by_rules(metadata, server).await {
+        if self.is_blocked_by_rules(metadata, server) {
             return true;
         }
 
