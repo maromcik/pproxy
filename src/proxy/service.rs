@@ -230,9 +230,22 @@ impl RequestMetadata {
         full_url.set_query(query);
         full_url.set_path(&uri);
 
+        let parsed_ip: IpAddr = client_addr.parse()?;
+
+        let normalized_ip = match parsed_ip {
+            IpAddr::V4(v4) => IpAddr::V4(v4),
+            IpAddr::V6(v6) => {
+                if let Some(v4) = v6.to_ipv4_mapped() {
+                    IpAddr::V4(v4)
+                } else {
+                    IpAddr::V6(v6)
+                }
+            }
+        };
+
         Ok(Self {
             user_agent,
-            client_ip: client_addr.parse()?,
+            client_ip: normalized_ip,
             forwarded_ip: client_forwarded.and_then(|ip| ip.parse().ok()),
             full_url,
             host,
