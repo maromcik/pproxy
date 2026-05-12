@@ -2,6 +2,7 @@ use crate::error::AppError;
 use crate::management::monitoring::monitor::MonitorState;
 use config::Config;
 use ipnetwork::IpNetwork;
+use itertools::Itertools;
 use pingora::lb::LoadBalancer;
 use pingora::lb::selection::Consistent;
 use pingora::prelude::{TcpHealthCheck, background_service};
@@ -71,10 +72,18 @@ impl ServerLoadBalancer {
     ) -> Result<(Self, GenBackgroundService<LoadBalancer<Consistent>>), AppError> {
         let mut lb = LoadBalancer::try_from_iter(value.upstreams.keys().map(String::from))?;
         lb.set_health_check(TcpHealthCheck::new());
+        lb.parallel_health_check = true;
         lb.health_check_frequency = value
             .health_check_interval
             .or_else(|| Some(Duration::from_secs(1)));
-        let background = background_service("health check", lb);
+        let background = background_service(
+            format!(
+                "Health Check for upstreams: <{}>",
+                value.upstreams.iter().map(|u| u.0).join("; ")
+            )
+            .as_str(),
+            lb,
+        );
         let lb: Arc<LoadBalancer<Consistent>> = background.task();
         let config = Self {
             lb,

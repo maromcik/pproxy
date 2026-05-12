@@ -26,7 +26,6 @@ use std::fmt::Display;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::Instant;
@@ -605,12 +604,12 @@ impl ProxyHttp for PingoraService {
             String::default(),
         ));
 
-        peer.options.connection_timeout = upstream_config
-            .connection_timeout
-            .or_else(|| Some(Duration::from_mins(2)));
         peer.options.tcp_keepalive = Some(TcpKeepalive::from(
             upstream_config.tcp_keep_alive.clone().unwrap_or_default(),
         ));
+        if let Some(connection_timeout) = upstream_config.connection_timeout {
+            peer.options.connection_timeout = Some(connection_timeout);
+        }
         if let Some(read_timeout) = upstream_config.read_timeout {
             peer.options.read_timeout = Some(read_timeout);
         }
