@@ -95,6 +95,47 @@ impl ServerLoadBalancer {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UpstreamConfig {
+    pub weight: usize,
+    #[serde(default)]
+    pub tls: bool,
+    #[serde(default, with = "humantime_serde")]
+    pub connection_timeout: Option<Duration>,
+    #[serde(default, with = "humantime_serde")]
+    pub total_connection_timeout: Option<Duration>,
+    #[serde(default, with = "humantime_serde")]
+    pub read_timeout: Option<Duration>,
+    #[serde(default, with = "humantime_serde")]
+    pub idle_timeout: Option<Duration>,
+    #[serde(default, with = "humantime_serde")]
+    pub write_timeout: Option<Duration>,
+    #[serde(default)]
+    pub tcp_recv_buf: Option<usize>,
+    #[serde(default)]
+    pub tcp_fast_open: Option<bool>,
+    #[serde(default)]
+    pub tcp_keep_alive: Option<TcpKeepAliveConfig>,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+pub struct TcpKeepAliveConfig {
+    idle: Option<Duration>,
+    interval: Option<Duration>,
+    count: Option<usize>,
+    user_timeout: Option<Duration>,
+}
+impl From<TcpKeepAliveConfig> for TcpKeepalive {
+    fn from(value: TcpKeepAliveConfig) -> Self {
+        Self {
+            idle: value.idle.unwrap_or(Duration::from_secs(5 * 60)),
+            interval: value.interval.unwrap_or(Duration::from_secs(10)),
+            count: value.count.unwrap_or(10),
+            user_timeout: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PathRule {
     pub pattern: String,
     pub new: String,
@@ -177,46 +218,6 @@ pub struct CommandConfig {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ControlConfig {
     pub listen: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct UpstreamConfig {
-    #[serde(default)]
-    pub tls: bool,
-    #[serde(default, with = "humantime_serde")]
-    pub connection_timeout: Option<Duration>,
-    #[serde(default, with = "humantime_serde")]
-    pub total_connection_timeout: Option<Duration>,
-    #[serde(default, with = "humantime_serde")]
-    pub read_timeout: Option<Duration>,
-    #[serde(default, with = "humantime_serde")]
-    pub idle_timeout: Option<Duration>,
-    #[serde(default, with = "humantime_serde")]
-    pub write_timeout: Option<Duration>,
-    #[serde(default)]
-    pub tcp_recv_buf: Option<usize>,
-    #[serde(default)]
-    pub tcp_fast_open: Option<bool>,
-    #[serde(default)]
-    pub tcp_keep_alive: Option<TcpKeepAliveConfig>,
-}
-
-#[derive(Default, Debug, Serialize, Deserialize, Clone)]
-pub struct TcpKeepAliveConfig {
-    idle: Option<Duration>,
-    interval: Option<Duration>,
-    count: Option<usize>,
-    user_timeout: Option<Duration>,
-}
-impl From<TcpKeepAliveConfig> for TcpKeepalive {
-    fn from(value: TcpKeepAliveConfig) -> Self {
-        Self {
-            idle: value.idle.unwrap_or(Duration::from_secs(5 * 60)),
-            interval: value.interval.unwrap_or(Duration::from_secs(10)),
-            count: value.count.unwrap_or(10),
-            user_timeout: Default::default(),
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
