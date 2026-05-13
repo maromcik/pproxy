@@ -96,7 +96,6 @@ impl ServerLoadBalancer {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UpstreamConfig {
-    pub weight: usize,
     #[serde(default)]
     pub tls: bool,
     #[serde(default, with = "humantime_serde")]
