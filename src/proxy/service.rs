@@ -582,7 +582,7 @@ impl ProxyHttp for PingoraService {
         ) else {
             return Err(Error::explain(
                 HTTPStatus(502),
-                "Server name could not be selected",
+                "Upstream could not be selected from backend pool",
             ));
         };
 
@@ -593,7 +593,7 @@ impl ProxyHttp for PingoraService {
         else {
             return Err(Error::explain(
                 HTTPStatus(502),
-                "Server name could not be selected",
+                "Upstream not found in configuration",
             ));
         };
 

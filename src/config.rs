@@ -3,14 +3,13 @@ use crate::management::monitoring::monitor::MonitorState;
 use config::Config;
 use ipnetwork::IpNetwork;
 use itertools::Itertools;
-use pingora::lb::LoadBalancer;
-use pingora::lb::selection::Consistent;
+use pingora::lb::{LoadBalancer, selection::Consistent};
 use pingora::prelude::{TcpHealthCheck, background_service};
 use pingora::protocols::l4::ext::TcpKeepalive;
 use pingora::services::background::GenBackgroundService;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::net::IpAddr;
+use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::debug;
@@ -68,26 +67,34 @@ pub struct ServerLoadBalancer {
 
 impl ServerLoadBalancer {
     pub fn from_config(
-        value: ServerConfig,
+        mut config: ServerConfig,
     ) -> Result<(Self, GenBackgroundService<LoadBalancer<Consistent>>), AppError> {
-        let mut lb = LoadBalancer::try_from_iter(value.upstreams.keys().map(String::from))?;
+        let mut lb = LoadBalancer::try_from_iter(config.upstreams.keys().map(String::from))?;
+        let mut new_upstreams: HashMap<String, UpstreamConfig> = HashMap::new();
+        for (name, upstream) in &config.upstreams {
+            for addr in name.to_socket_addrs()? {
+                new_upstreams.insert(addr.to_string(), upstream.clone());
+            }
+        }
         lb.set_health_check(TcpHealthCheck::new());
         lb.parallel_health_check = true;
-        lb.health_check_frequency = value
+        lb.health_check_frequency = config
             .health_check_interval
             .or_else(|| Some(Duration::from_secs(1)));
         let background = background_service(
             format!(
                 "Health Check for upstreams: <{}>",
-                value.upstreams.iter().map(|u| u.0).join("; ")
+                config.upstreams.iter().map(|u| u.0).join("; ")
             )
             .as_str(),
             lb,
         );
+
         let lb: Arc<LoadBalancer<Consistent>> = background.task();
+        config.upstreams = new_upstreams;
         let config = Self {
             lb,
-            server_config: value,
+            server_config: config,
         };
 
         Ok((config, background))
@@ -123,10 +130,11 @@ pub struct TcpKeepAliveConfig {
     count: Option<usize>,
     user_timeout: Option<Duration>,
 }
+
 impl From<TcpKeepAliveConfig> for TcpKeepalive {
     fn from(value: TcpKeepAliveConfig) -> Self {
         Self {
-            idle: value.idle.unwrap_or(Duration::from_secs(5 * 60)),
+            idle: value.idle.unwrap_or(Duration::from_mins(5)),
             interval: value.interval.unwrap_or(Duration::from_secs(10)),
             count: value.count.unwrap_or(10),
             user_timeout: Default::default(),

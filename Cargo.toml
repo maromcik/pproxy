@@ -1,6 +1,6 @@
 [package]
 name = "pproxy"
-version = "1.2.6"
+version = "1.3.0fi"
 edition = "2024"
 
 [dependencies]
