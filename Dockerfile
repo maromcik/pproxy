@@ -35,4 +35,4 @@ RUN mkdir -p /opt/pproxy
 
 VOLUME ["/opt/pproxy"]
 
-CMD ["/usr/local/bin/pproxy", "-c", "/opt/pproxy/pproxy.toml"]
+CMD ["/usr/local/bin/pproxy", "-c", "/opt/pproxy/pproxy.yaml"]
