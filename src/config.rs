@@ -231,15 +231,13 @@ pub struct ControlConfig {
 pub struct WafConfig {
     #[serde(default)]
     pub blocklist_url: Option<String>,
-    #[serde(default)]
     pub geo_api_url: String,
-    #[serde(default)]
     pub geo_cache_file_path: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
-    pub control: ControlConfig,
+    pub control: Option<ControlConfig>,
 
     #[serde(default)]
     pub hosts: HashMap<String, HostConfig>,
@@ -247,8 +245,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub monitors: HashMap<String, MonitorConfig>,
 
-    // #[serde(default)]
-    pub waf: WafConfig,
+    #[serde(default)]
+    pub waf: Option<WafConfig>,
 
     #[serde(default = "default_info")]
     pub app_log_level: String,

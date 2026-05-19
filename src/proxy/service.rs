@@ -1,9 +1,10 @@
-use crate::config::{IpSource, ServerConfig, ServersWithLoadBalancers, WafConfig};
+use crate::config::{IpSource, ServerConfig, ServersWithLoadBalancers};
 use crate::error::AppError;
 use crate::management::monitoring::monitor::Monitors;
 use crate::management::templates::templates::PublicPageTemplate;
 use crate::proxy::blocklist::BlocklistIp;
 use crate::proxy::geo::GeoData;
+use crate::proxy::waf::{Waf, WafParsedConfig};
 use askama::Template;
 use async_trait::async_trait;
 use ipnetwork::IpNetwork;
@@ -21,13 +22,13 @@ use pingora::utils::tls::CertKey;
 use pingora::{Error, HTTPStatus, tls};
 use regex::Regex;
 use reqwest::Client;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use time::OffsetDateTime;
-use tokio::sync::{Mutex, RwLock, mpsc};
+
 use tokio::time::Instant;
 use tracing::{debug, error, trace, warn};
 
@@ -95,11 +96,7 @@ pub struct PingoraService {
     pub tls: bool,
     pub monitors: Monitors,
     pub servers: ServersWithLoadBalancers,
-    pub waf_config: WafConfig,
-    pub geo_fence: RwLock<HashMap<IpAddr, GeoData>>,
-    pub geo_api_client: Mutex<Client>,
-    pub blocked_ips: RwLock<HashSet<IpAddr>>,
-    pub geo_cache_writer: mpsc::Sender<GeoData>,
+    pub waf: Option<Waf>,
 }
 
 impl PingoraService {
@@ -109,21 +106,15 @@ impl PingoraService {
         tls: bool,
         monitors: Monitors,
         servers: ServersWithLoadBalancers,
-        geo_cache_writer: mpsc::Sender<GeoData>,
-        geo_cache_data: HashMap<IpAddr, GeoData>,
-        client: Client,
-        waf_config: WafConfig,
+        waf: Option<WafParsedConfig>,
     ) -> Self {
+        let waf = waf.map(Waf::from);
         Self {
             listen_addr,
             tls,
             monitors,
             servers,
-            waf_config,
-            geo_fence: RwLock::new(geo_cache_data),
-            geo_api_client: Mutex::new(client),
-            blocked_ips: RwLock::new(HashSet::new()),
-            geo_cache_writer,
+            waf,
         }
     }
     pub fn build_service(
@@ -260,12 +251,15 @@ impl RequestMetadata {
 
 impl PingoraService {
     async fn add_ip_to_blocklist(&self, data: &BlocklistIp) {
-        let Some(blocklist_url) = &self.waf_config.blocklist_url else {
+        let Some(waf) = &self.waf else {
+            return;
+        };
+        let Some(blocklist_url) = &waf.waf_config.blocklist_url else {
             trace!("Blocklist disabled");
             return;
         };
 
-        if self.blocked_ips.read().await.contains(&data.ip.ip()) {
+        if waf.blocked_ips.read().await.contains(&data.ip.ip()) {
             info!("BLOCKLIST:DUPLICATE: {} already in the blocklist", data.ip);
             return;
         }
@@ -276,7 +270,7 @@ impl PingoraService {
             Ok(resp) => {
                 if resp.status().is_success() {
                     info!("BLOCKLIST:ADDED; {}", data.ip);
-                    self.blocked_ips.write().await.insert(data.ip.ip());
+                    waf.blocked_ips.write().await.insert(data.ip.ip());
                 } else {
                     warn!(
                         "BLOCKLIST:FAILED; adding IP {} failed with status code: {}",
@@ -316,7 +310,10 @@ impl PingoraService {
         metadata: &RequestMetadata,
         server_config: &ServerConfig,
     ) -> Option<bool> {
-        if let Some(geo_data) = self.geo_fence.read().await.get(&metadata.client_ip) {
+        let Some(waf) = &self.waf else {
+            return None;
+        };
+        if let Some(geo_data) = waf.geo_fence.read().await.get(&metadata.client_ip) {
             debug!("geolocation cache hit: {:?}", geo_data);
             return Some(self.is_geo_data_blocked(geo_data, server_config));
         }
@@ -328,6 +325,10 @@ impl PingoraService {
         metadata: &RequestMetadata,
         server: &ServerConfig,
     ) -> Result<bool, AppError> {
+        let Some(waf) = &self.waf else {
+            return Ok(false);
+        };
+
         if server.geo_fence_isp_blocklist.is_none() && server.geo_fence_country_allowlist.is_none()
         {
             debug!("empty geo fence allowlist");
@@ -338,21 +339,21 @@ impl PingoraService {
             return Ok(blocked);
         }
 
-        let client = self.geo_api_client.lock().await;
+        let client = waf.geo_api_client.lock().await;
         if let Some(blocked) = self.check_geo_cache(metadata, server).await {
             return Ok(blocked);
         }
         let data = client
             .get(format!(
                 "{}{}",
-                self.waf_config.geo_api_url, metadata.client_ip
+                waf.waf_config.geo_api_url, metadata.client_ip
             ))
             .send()
             .await?
             .json::<GeoData>()
             .await
             .map_err(|e| AppError::ParseError(format!("{e}")))?;
-        let mut fence = self.geo_fence.write().await;
+        let mut fence = waf.geo_fence.write().await;
         let geo_data = fence.entry(metadata.client_ip).or_insert(data.clone());
         let blocked = self.is_geo_data_blocked(geo_data, server);
         if blocked {
@@ -367,7 +368,7 @@ impl PingoraService {
         } else {
             info!("ALLOWED:GEO; LOC: <{geo_data}>; REQ <{metadata}>");
         }
-        if let Err(e) = self.geo_cache_writer.send(data.clone()).await {
+        if let Err(e) = waf.geo_cache_writer.send(data.clone()).await {
             warn!("could not send GeoData: {data}; {e}")
         }
         Ok(blocked)

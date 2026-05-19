@@ -7,17 +7,14 @@ use crate::config::{AppConfig, HostConfig, ServerLoadBalancer, ServersWithLoadBa
 use crate::error::AppError;
 use crate::management::init_control;
 use crate::management::monitoring::monitor::{MonitorState, Monitors};
-use crate::proxy::geo::{GeoData, GeoWriter};
 use crate::proxy::service::PingoraService;
+use crate::proxy::waf::WafParsedConfig;
 use clap::Parser;
 use pingora::prelude::*;
 use pingora::server::configuration::ServerConf;
-use reqwest::Client;
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 use tracing_appender::non_blocking;
 use tracing_subscriber::EnvFilter;
@@ -32,8 +29,7 @@ struct Cli {
 
 fn init_pingora(
     config: AppConfig,
-    geo_writer: mpsc::Sender<GeoData>,
-    geo_cache_data: HashMap<IpAddr, GeoData>,
+    waf_config: Option<WafParsedConfig>,
     monitors: Monitors,
 ) -> Result<(), AppError> {
     let conf = ServerConf {
@@ -66,8 +62,6 @@ fn init_pingora(
     info!("Bootstrap done");
     info!("PProxy Config: {:#?}", config);
 
-    let client = Client::builder().timeout(Duration::from_secs(3)).build()?;
-
     for (addr, HostConfig { tls, servers }) in config.hosts {
         let addr: SocketAddr = addr.parse()?;
         let mut servers_with_load_balancers = HashMap::new();
@@ -77,15 +71,13 @@ fn init_pingora(
             server.add_service(background);
             servers_with_load_balancers.insert(sni, runtime_config);
         }
+
         let pproxy = PingoraService::new(
             addr,
             tls,
             monitors.clone(),
             ServersWithLoadBalancers(servers_with_load_balancers),
-            geo_writer.clone(),
-            geo_cache_data.clone(),
-            client.clone(),
-            config.waf.clone(),
+            waf_config.clone(),
         );
         let service = pproxy.build_service(server.configuration.clone(), addr.to_string(), tls)?;
 
@@ -115,15 +107,7 @@ async fn main() -> Result<(), AppError> {
         .with_env_filter(env)
         .init();
 
-    let get_cache_data = GeoData::load_geo_data(config.waf.geo_cache_file_path.as_str())
-        .await
-        .unwrap_or(HashMap::new());
-    let (geo_writer, geo_receiver) = mpsc::channel(1000);
-
     let local_config = config.clone();
-    let writer = GeoWriter::open(&config.waf.geo_cache_file_path, geo_receiver).await?;
-    writer.run().await;
-
     let monitors: Arc<HashMap<String, Arc<MonitorState>>> = Arc::new(
         config
             .monitors
@@ -134,17 +118,15 @@ async fn main() -> Result<(), AppError> {
 
     let monitors_local = monitors.clone();
 
-    tokio::spawn(async move {
-        if let Err(e) = init_control(
-            config.control,
-            monitors_local,
-            config.static_files_path.as_str(),
-        )
-        .await
-        {
-            error!("{e}");
-        }
-    });
+    if let Some(control) = config.control {
+        tokio::spawn(async move {
+            if let Err(e) =
+                init_control(control, monitors_local, config.static_files_path.as_str()).await
+            {
+                error!("{e}");
+            }
+        });
+    }
 
     for monitor in monitors.values() {
         let local = monitor.clone();
@@ -153,9 +135,11 @@ async fn main() -> Result<(), AppError> {
         });
     }
 
+    let waf_config = WafParsedConfig::new(config.waf).await?;
+
     let monitors_local = monitors.clone();
     tokio::task::spawn_blocking(move || {
-        init_pingora(local_config, geo_writer, get_cache_data, monitors_local)?;
+        init_pingora(local_config, waf_config, monitors_local)?;
         Ok::<(), AppError>(())
     })
     .await??;

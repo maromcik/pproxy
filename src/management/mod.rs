@@ -22,7 +22,7 @@ pub async fn init_control(
         .route("/control/{name}", get(control_monitor))
         .with_state(monitors);
 
-    let listener = tokio::net::TcpListener::bind(config.listen).await?;
+    let listener = tokio::net::TcpListener::bind(&config.listen).await?;
     info!("listening on {}", listener.local_addr()?);
     axum::serve(listener, app).await?;
     Ok(())
