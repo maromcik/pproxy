@@ -9,7 +9,7 @@ control:
 waf:
     blocklist_url: "http://192.168.0.10:6060/blocklist" # optional
     geo_cache_file_path: "/opt/systemd/pproxy/geo_cache"
-    geo_api_url: "https://api.iplocation.net?ip="
+    geo_api_url: "https://api.iplocation.net?ip={ip}"
 
 hosts:
   "0.0.0.0:443":

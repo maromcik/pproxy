@@ -343,11 +343,10 @@ impl PingoraService {
         if let Some(blocked) = self.check_geo_cache(metadata, server).await {
             return Ok(blocked);
         }
+        let url =
+            strfmt::strfmt!(&waf.waf_config.geo_api_url, ip => metadata.client_ip.to_string())?;
         let data = client
-            .get(format!(
-                "{}{}",
-                waf.waf_config.geo_api_url, metadata.client_ip
-            ))
+            .get(url)
             .send()
             .await?
             .json::<GeoData>()

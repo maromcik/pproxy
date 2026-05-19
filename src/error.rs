@@ -112,3 +112,9 @@ impl IntoResponse for AppError {
         }
     }
 }
+
+impl From<strfmt::FmtError> for AppError {
+    fn from(e: strfmt::FmtError) -> Self {
+        AppError::ParseError(e.to_string())
+    }
+}
