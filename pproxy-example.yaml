@@ -1,0 +1,164 @@
+app_log_level: "info"
+all_log_level: "warn"
+static_files_path: "/opt/systemd/pproxy/static"
+
+
+control:
+    listen: "0.0.0.0:5050"
+
+waf:
+    blocklist_url: "http://192.168.0.10:6060/blocklist" # optional
+    geo_cache_file_path: "/opt/systemd/pproxy/geo_cache"
+    geo_api_url: "https://api.iplocation.net?ip="
+
+hosts:
+  "0.0.0.0:443":
+    tls: true
+    servers:
+      my-full-example.com:
+        upstreams:
+          "192.168.0.10:8000": {}
+          "192.168.0.11:8000":
+            tls: true
+          "192.168.0.12:8000": {}
+        # TLS certificate for this server
+        cert_path: "/etc/letsencrypt/live/my-full-example.com/fullchain.pem"
+        key_path: "/etc/letsencrypt/live/my-full-example.com/privkey.pem"
+
+        # Proxy headers forwarded to upstream
+        proxy_headers:
+          Connection: "upgrade"
+
+
+        # Security response headers
+        headers:
+          X-Content-Type-Options: "nosniff"
+          X-Frame-Options: "SAMEORIGIN"
+          X-XSS-Protection: "1; mode=block"
+          Strict-Transport-Security: "max-age=31536000; includeSubDomains;"
+
+        # Block bots/crawlers by User-Agent substring
+        user_agent_blocklist:
+          - "facebook"
+          - "scapy"
+          - "cypex"
+          - "scanning"
+          - "OAI-SearchBot"
+          - "YandexBot"
+          - "openai"
+          - "InternetMeasurement"
+
+        # Geo-fencing: allow only visitors from these countries
+        geo_fence_country_allowlist:
+          - "SK"
+          - "CZ"
+          - "GB"
+
+        # Geo-fencing: block visitors from these ISPs
+        geo_fence_isp_blocklist:
+          - "Amazon Data Services UK"
+
+        # URL Redirect rules (301/302 redirects)
+        redirect_rules:
+          - pattern: "example.com"
+            new: "new-example.com"
+          - pattern: "^old-page\\.html$"
+            new: "/new-page"
+
+        # URL Rewrite rules (internal path rewriting)
+        rewrite_rules:
+          - pattern: "/api/v1/(.*)"
+            new: "/internal/$1"
+          - pattern: "/old-path/"
+            new: "/new-path/"
+
+        # IP-based access control rules
+        ip_rules:
+          - source: "Direct"
+            subnet: "192.168.0.0/21"
+            action: "Allow"
+          - source: "Direct"
+            subnet: "10.0.0.0/8"
+            action: "Allow"
+          - source: "Direct"
+            subnet: "2001:1aeb:3e81:3200::/56"
+            action: "Allow"
+          - source: "Direct"
+            subnet: "0.0.0.0/0"
+            action: "Deny"
+          - source: "Direct"
+            subnet: "::/0"
+            action: "Deny"
+
+        # Power-saving monitor (optional)
+        # monitor: "test"
+
+      # --- Minimal server: just upstream and cert ---
+      minimal.example.com:
+        upstreams:
+          "192.168.0.10:3000": {}
+        cert_path: "/etc/letsencrypt/live/minimal.example.com/fullchain.pem"
+        key_path: "/etc/letsencrypt/live/minimal.example.com/privkey.pem"
+
+      # --- Server with load-balanced upstreams ---
+      load-balanced.example.com:
+        upstreams:
+          "192.168.0.10:8082":
+            tls: true
+          "192.168.0.11:8082":
+            tls: true
+          "192.168.0.12:8082":
+            tls: false
+        cert_path: "/etc/letsencrypt/live/load-balanced.example.com/fullchain.pem"
+        key_path: "/etc/letsencrypt/live/load-balanced.example.com/privkey.pem"
+        proxy_headers:
+          Connection: "upgrade"
+        geo_fence_country_allowlist:
+          - "SK"
+          - "CZ"
+
+      # --- Server with IP restrictions only ---
+      internal-only.example.com:
+        upstreams:
+          "192.168.0.50:80": {}
+        cert_path: "/etc/letsencrypt/live/internal-only.example.com/fullchain.pem"
+        key_path: "/etc/letsencrypt/live/internal-only.example.com/privkey.pem"
+        ip_rules:
+          - source: "Direct"
+            subnet: "192.168.0.0/16"
+            action: "Allow"
+          - source: "Direct"
+            subnet: "0.0.0.0/0"
+            action: "Deny"
+          - source: "Direct"
+            subnet: "::/0"
+            action: "Deny"
+
+
+  "[::]:443":
+    tls: true
+    servers:
+      ipv4and6.example.com:
+        upstreams:
+          "[::1]:8080": {}
+        cert_path: "/etc/letsencrypt/live/ipv6.example.com/fullchain.pem"
+        key_path: "/etc/letsencrypt/live/ipv6.example.com/privkey.pem"
+        proxy_headers:
+          Connection: "upgrade"
+        headers:
+          X-Content-Type-Options: "nosniff"
+          Strict-Transport-Security: "max-age=31536000; includeSubDomains;"
+
+
+# This machine will be suspended after 300 seconds of no activity
+# and woken up when new requests are received.
+# Control panel for this monitor is available at IP:5050/control/test
+
+monitors:
+    test:
+      suspend_timeout: 300
+      commands:
+      check_command: "ping -W 0.3 -c 1 192.168.0.32"
+      wake_command: "wakeonlan 3c:52:82:51:e4:59"
+      suspend_command: "ssh -o ConnectTimeout=1 pproxy@192.168.0.32 sudo systemctl suspend -i"
+      status_command: "ssh -o ConnectTimeout=1 pproxy@192.168.0.32 sudo sus-save"
