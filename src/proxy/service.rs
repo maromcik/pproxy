@@ -610,7 +610,6 @@ impl PingoraService {
                     ));
                 };
 
-                debug!("Upstream: {}", upstream.addr);
                 let mut peer = Box::new(HttpPeer::new(
                     &upstream,
                     upstream_config.tls,
@@ -620,7 +619,7 @@ impl PingoraService {
                 peer
             }
         };
-        info!("Proxy to {}", peer._address);
+        debug!("{} -> PROXY TO -> {}", metadata, peer._address);
         Ok(peer)
     }
 }
