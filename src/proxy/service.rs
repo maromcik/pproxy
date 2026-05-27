@@ -578,12 +578,12 @@ impl PingoraService {
         }
     }
 
-    async fn select_upstream(
+    fn select_upstream(
         &self,
         upstream_selector: &UpstreamSelector,
         metadata: &RequestMetadata,
     ) -> pingora::Result<Box<HttpPeer>> {
-        match upstream_selector {
+        let peer = match upstream_selector {
             UpstreamSelector::Direct(upstream) => {
                 let mut peer = Box::new(HttpPeer::new(
                     &upstream.addr,
@@ -591,7 +591,7 @@ impl PingoraService {
                     String::default(),
                 ));
                 Self::set_upstream_options(&mut peer, &upstream.config);
-                Ok(peer)
+                peer
             }
             UpstreamSelector::LB(lb) => {
                 let Some(upstream) = lb.lb.select(
@@ -617,9 +617,11 @@ impl PingoraService {
                     String::default(),
                 ));
                 Self::set_upstream_options(&mut peer, upstream_config);
-                Ok(peer)
+                peer
             }
-        }
+        };
+        info!("Proxy to {}", peer._address);
+        Ok(peer)
     }
 }
 
@@ -653,13 +655,11 @@ impl ProxyHttp for PingoraService {
         for method in &server.proxy.methods {
             match method {
                 ProxyMethod::Exact(upstream_selector) => {
-                    return self.select_upstream(upstream_selector, metadata).await;
+                    return self.select_upstream(upstream_selector, metadata);
                 }
                 ProxyMethod::Regex(path_upstream_selector) => {
                     if path_upstream_selector.path.is_match(&metadata.uri) {
-                        return self
-                            .select_upstream(&path_upstream_selector.upstream, metadata)
-                            .await;
+                        return self.select_upstream(&path_upstream_selector.upstream, metadata);
                     }
                 }
             }
