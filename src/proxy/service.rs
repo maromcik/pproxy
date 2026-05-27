@@ -591,7 +591,7 @@ impl PingoraService {
                     String::default(),
                 ));
                 Self::set_upstream_options(&mut peer, &upstream.config);
-                return Ok(peer);
+                Ok(peer)
             }
             UpstreamSelector::LB(lb) => {
                 let Some(upstream) = lb.lb.select(
@@ -616,10 +616,10 @@ impl PingoraService {
                     upstream_config.tls,
                     String::default(),
                 ));
-                Self::set_upstream_options(&mut peer, &upstream_config);
-                return Ok(peer);
+                Self::set_upstream_options(&mut peer, upstream_config);
+                Ok(peer)
             }
-        };
+        }
     }
 }
 
@@ -653,12 +653,12 @@ impl ProxyHttp for PingoraService {
         for method in &server.proxy.methods {
             match method {
                 ProxyMethod::Exact(upstream_selector) => {
-                    return self.select_upstream(upstream_selector, &metadata).await;
+                    return self.select_upstream(upstream_selector, metadata).await;
                 }
                 ProxyMethod::Regex(path_upstream_selector) => {
                     if path_upstream_selector.path.is_match(&metadata.uri) {
                         return self
-                            .select_upstream(&path_upstream_selector.upstream, &metadata)
+                            .select_upstream(&path_upstream_selector.upstream, metadata)
                             .await;
                     }
                 }
