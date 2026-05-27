@@ -3,11 +3,12 @@ mod error;
 mod management;
 mod proxy;
 
-use crate::config::{AppConfig, HostConfig, ServerLoadBalancer, ServersWithLoadBalancers};
+use crate::config::{AppConfig, HostConfig};
 use crate::error::AppError;
 use crate::management::init_control;
 use crate::management::monitoring::monitor::{MonitorState, Monitors};
 use crate::proxy::service::PingoraService;
+use crate::proxy::upstream::{ProxyServerConfig, ServersWithLoadBalancers};
 use crate::proxy::waf::WafParsedConfig;
 use clap::Parser;
 use pingora::prelude::*;
@@ -67,9 +68,12 @@ fn init_pingora(
         let mut servers_with_load_balancers = HashMap::new();
 
         for (sni, srv) in servers.0 {
-            let (runtime_config, background) = ServerLoadBalancer::from_config(srv)?;
-            server.add_service(background);
-            servers_with_load_balancers.insert(sni, runtime_config);
+            let proxy_server_with_healthcheck = ProxyServerConfig::from_config(srv)?;
+
+            for health_check in proxy_server_with_healthcheck.healthchecks {
+                server.add_service(health_check);
+            }
+            servers_with_load_balancers.insert(sni, proxy_server_with_healthcheck.proxy_server);
         }
 
         let pproxy = PingoraService::new(

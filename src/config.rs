@@ -2,27 +2,15 @@ use crate::error::AppError;
 use crate::management::monitoring::monitor::MonitorState;
 use config::Config;
 use ipnetwork::IpNetwork;
-use itertools::Itertools;
-use pingora::lb::{LoadBalancer, selection::Consistent};
-use pingora::prelude::{TcpHealthCheck, background_service};
 use pingora::protocols::l4::ext::TcpKeepalive;
-use pingora::services::background::GenBackgroundService;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, ToSocketAddrs};
-use std::sync::Arc;
+use std::net::IpAddr;
 use std::time::Duration;
 use tracing::debug;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Servers(pub HashMap<String, ServerConfig>);
-pub struct ServersWithLoadBalancers(pub HashMap<String, ServerLoadBalancer>);
-
-impl ServersWithLoadBalancers {
-    pub fn get_server(&self, name: &str) -> Option<&ServerLoadBalancer> {
-        self.0.get(name.strip_prefix("www.").unwrap_or(name))
-    }
-}
 
 fn default_info() -> String {
     String::from("info")
@@ -32,8 +20,15 @@ fn default_static_files() -> String {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ServerConfig {
+pub struct ProxyToConfig {
+    #[serde(default)]
+    pub path: Option<String>,
     pub upstreams: HashMap<String, UpstreamConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ServerConfig {
+    pub proxy: Vec<ProxyToConfig>,
     #[serde(default, with = "humantime_serde")]
     pub health_check_interval: Option<Duration>,
     #[serde(default)]
@@ -58,47 +53,6 @@ pub struct ServerConfig {
     pub rewrite_rules: Vec<PathRule>,
     #[serde(default)]
     pub redirect_rules: Vec<PathRule>,
-}
-
-pub struct ServerLoadBalancer {
-    pub lb: Arc<LoadBalancer<Consistent>>,
-    pub server_config: ServerConfig,
-}
-
-impl ServerLoadBalancer {
-    pub fn from_config(
-        mut config: ServerConfig,
-    ) -> Result<(Self, GenBackgroundService<LoadBalancer<Consistent>>), AppError> {
-        let mut lb = LoadBalancer::try_from_iter(config.upstreams.keys().map(String::from))?;
-        let mut new_upstreams: HashMap<String, UpstreamConfig> = HashMap::new();
-        for (name, upstream) in &config.upstreams {
-            for addr in name.to_socket_addrs()? {
-                new_upstreams.insert(addr.to_string(), upstream.clone());
-            }
-        }
-        lb.set_health_check(TcpHealthCheck::new());
-        lb.parallel_health_check = true;
-        lb.health_check_frequency = config
-            .health_check_interval
-            .or_else(|| Some(Duration::from_secs(1)));
-        let background = background_service(
-            format!(
-                "Health Check for upstreams: <{}>",
-                config.upstreams.iter().map(|u| u.0).join("; ")
-            )
-            .as_str(),
-            lb,
-        );
-
-        let lb: Arc<LoadBalancer<Consistent>> = background.task();
-        config.upstreams = new_upstreams;
-        let config = Self {
-            lb,
-            server_config: config,
-        };
-
-        Ok((config, background))
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

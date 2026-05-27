@@ -1,9 +1,11 @@
-use crate::config::{IpSource, ServerConfig, ServersWithLoadBalancers};
+use crate::config::{IpSource, ServerConfig, UpstreamConfig};
 use crate::error::AppError;
 use crate::management::monitoring::monitor::Monitors;
 use crate::management::templates::templates::PublicPageTemplate;
 use crate::proxy::blocklist::BlocklistIp;
 use crate::proxy::geo::GeoData;
+use crate::proxy::upstream::UpstreamSelector;
+use crate::proxy::upstream::{ProxyMethod, ServersWithLoadBalancers};
 use crate::proxy::waf::{Waf, WafParsedConfig};
 use askama::Template;
 use async_trait::async_trait;
@@ -43,6 +45,7 @@ impl TlsSelector {
                 server.server_config.cert_path.as_ref(),
                 server.server_config.key_path.as_ref(),
             ) {
+                let sni = sni.split(':').next().unwrap_or(sni).to_string();
                 let cert_bytes = std::fs::read(cert)
                     .map_err(|e| AppError::IOError(format!("Certificate {cert} not found: {e}")))?;
                 let certs = tls::x509::X509::stack_from_pem(&cert_bytes)?;
@@ -67,10 +70,7 @@ impl TlsAccept for TlsSelector {
             return;
         };
         debug!("SNI provided: {}", sni_provided);
-        let Some(certs) = self
-            .0
-            .get(sni_provided.strip_prefix("www.").unwrap_or(sni_provided))
-        else {
+        let Some(certs) = self.0.get(sni_provided) else {
             warn!("No certificate found for SNI: {}", sni_provided);
             return;
         };
@@ -547,6 +547,80 @@ impl PingoraService {
         }
         Ok(true)
     }
+
+    fn set_upstream_options(peer: &mut Box<HttpPeer>, upstream_config: &UpstreamConfig) {
+        peer.options.tcp_keepalive = Some(TcpKeepalive::from(
+            upstream_config.tcp_keep_alive.clone().unwrap_or_default(),
+        ));
+        if let Some(connection_timeout) = upstream_config.connection_timeout {
+            peer.options.connection_timeout = Some(connection_timeout);
+        }
+        if let Some(read_timeout) = upstream_config.read_timeout {
+            peer.options.read_timeout = Some(read_timeout);
+        }
+        if let Some(write_timeout) = upstream_config.write_timeout {
+            peer.options.write_timeout = Some(write_timeout);
+        }
+        if let Some(idle_timeout) = upstream_config.idle_timeout {
+            peer.options.idle_timeout = Some(idle_timeout);
+        }
+
+        if let Some(total_connection_timeout) = upstream_config.total_connection_timeout {
+            peer.options.total_connection_timeout = Some(total_connection_timeout);
+        }
+
+        if let Some(tcp_recv_buf) = upstream_config.tcp_recv_buf {
+            peer.options.tcp_recv_buf = Some(tcp_recv_buf);
+        }
+
+        if let Some(tcp_fast_open) = upstream_config.tcp_fast_open {
+            peer.options.tcp_fast_open = tcp_fast_open;
+        }
+    }
+
+    async fn select_upstream(
+        &self,
+        upstream_selector: &UpstreamSelector,
+        metadata: &RequestMetadata,
+    ) -> pingora::Result<Box<HttpPeer>> {
+        match upstream_selector {
+            UpstreamSelector::Direct(upstream) => {
+                let mut peer = Box::new(HttpPeer::new(
+                    &upstream.addr,
+                    upstream.config.tls,
+                    String::default(),
+                ));
+                Self::set_upstream_options(&mut peer, &upstream.config);
+                return Ok(peer);
+            }
+            UpstreamSelector::LB(lb) => {
+                let Some(upstream) = lb.lb.select(
+                    format!("{};{}", metadata.client_ip, metadata.host).as_bytes(),
+                    256,
+                ) else {
+                    return Err(Error::explain(
+                        HTTPStatus(502),
+                        "Upstream could not be selected from backend pool",
+                    ));
+                };
+                let Some(upstream_config) = lb.configs.get(&upstream.addr.to_string()) else {
+                    return Err(Error::explain(
+                        HTTPStatus(502),
+                        "Upstream not found in configuration",
+                    ));
+                };
+
+                debug!("Upstream: {}", upstream.addr);
+                let mut peer = Box::new(HttpPeer::new(
+                    &upstream,
+                    upstream_config.tls,
+                    String::default(),
+                ));
+                Self::set_upstream_options(&mut peer, &upstream_config);
+                return Ok(peer);
+            }
+        };
+    }
 }
 
 #[async_trait]
@@ -576,63 +650,25 @@ impl ProxyHttp for PingoraService {
             ));
         };
 
-        let Some(upstream) = server.lb.select(
-            format!("{};{}", metadata.client_ip, metadata.host).as_bytes(),
-            256,
-        ) else {
-            return Err(Error::explain(
-                HTTPStatus(502),
-                "Upstream could not be selected from backend pool",
-            ));
-        };
-
-        let Some(upstream_config) = server
-            .server_config
-            .upstreams
-            .get(&upstream.addr.to_string())
-        else {
-            return Err(Error::explain(
-                HTTPStatus(502),
-                "Upstream not found in configuration",
-            ));
-        };
-
-        debug!("Upstream: {}", upstream.addr);
-        let mut peer = Box::new(HttpPeer::new(
-            &upstream,
-            upstream_config.tls,
-            String::default(),
-        ));
-
-        peer.options.tcp_keepalive = Some(TcpKeepalive::from(
-            upstream_config.tcp_keep_alive.clone().unwrap_or_default(),
-        ));
-        if let Some(connection_timeout) = upstream_config.connection_timeout {
-            peer.options.connection_timeout = Some(connection_timeout);
-        }
-        if let Some(read_timeout) = upstream_config.read_timeout {
-            peer.options.read_timeout = Some(read_timeout);
-        }
-        if let Some(write_timeout) = upstream_config.write_timeout {
-            peer.options.write_timeout = Some(write_timeout);
-        }
-        if let Some(idle_timeout) = upstream_config.idle_timeout {
-            peer.options.idle_timeout = Some(idle_timeout);
+        for method in &server.proxy.methods {
+            match method {
+                ProxyMethod::Exact(upstream_selector) => {
+                    return self.select_upstream(upstream_selector, &metadata).await;
+                }
+                ProxyMethod::Regex(path_upstream_selector) => {
+                    if path_upstream_selector.path.is_match(&metadata.uri) {
+                        return self
+                            .select_upstream(&path_upstream_selector.upstream, &metadata)
+                            .await;
+                    }
+                }
+            }
         }
 
-        if let Some(total_connection_timeout) = upstream_config.total_connection_timeout {
-            peer.options.total_connection_timeout = Some(total_connection_timeout);
-        }
-
-        if let Some(tcp_recv_buf) = upstream_config.tcp_recv_buf {
-            peer.options.tcp_recv_buf = Some(tcp_recv_buf);
-        }
-
-        if let Some(tcp_fast_open) = upstream_config.tcp_fast_open {
-            peer.options.tcp_fast_open = tcp_fast_open;
-        }
-
-        Ok(peer)
+        Err(Error::explain(
+            HTTPStatus(502),
+            "Upstream could not be selected based on neither exact nor regex match",
+        ))
     }
 
     async fn request_filter(
