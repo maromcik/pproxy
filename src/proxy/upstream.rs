@@ -1,6 +1,7 @@
 use std::{collections::HashMap, net::ToSocketAddrs, sync::Arc, time::Duration};
 
 use itertools::Itertools;
+use log::error;
 use pingora::{
     lb::{LoadBalancer, health_check::TcpHealthCheck, selection::Consistent},
     services::background::{GenBackgroundService, background_service},
@@ -51,6 +52,7 @@ impl ProxyServerConfig {
             );
 
             let lb: Arc<LoadBalancer<Consistent>> = background.task();
+            error!("upstreams: {:?}", new_upstreams);
             let proxy_config = if let Some(path) = &proxy.path {
                 ProxyMethod::Regex(PathUpstreamSelector {
                     path: Regex::new(path.as_str())
@@ -89,7 +91,7 @@ impl ProxyServerConfig {
             AppError::ConfigError("Proxy config must contain exactly 1 upstream server".to_string())
         })?;
 
-        let config = if let Some(path) = &proxy_to.path {
+        let proxy_config = if let Some(path) = &proxy_to.path {
             Self {
                 proxy: ProxyMethods {
                     methods: vec![ProxyMethod::Regex(PathUpstreamSelector {
@@ -114,22 +116,29 @@ impl ProxyServerConfig {
             }
         };
 
-        Ok(config)
+        Ok(proxy_config)
     }
 
     pub fn from_config(
         config: ServerConfig,
-    ) -> Result<ProxyServerConfigWithHealthchecks, AppError> {
-        if config.proxy.len() > 1 {
-            Self::build_load_balancer_server(config)
-        } else {
-            ProxyServerConfig::build_direct_server(config).map(|proxy_server| {
-                ProxyServerConfigWithHealthchecks {
-                    proxy_server,
-                    healthchecks: Vec::new(),
-                }
-            })
+    ) -> Result<Vec<ProxyServerConfigWithHealthchecks>, AppError> {
+        let mut servers = Vec::new();
+        for proxy in &config.proxy {
+            if proxy.upstreams.len() > 1 {
+                let server = Self::build_load_balancer_server(config.clone())?;
+                servers.push(server);
+            } else {
+                let server =
+                    ProxyServerConfig::build_direct_server(config.clone()).map(|proxy_server| {
+                        ProxyServerConfigWithHealthchecks {
+                            proxy_server,
+                            healthchecks: Vec::new(),
+                        }
+                    })?;
+                servers.push(server);
+            }
         }
+        Ok(servers)
     }
 }
 
