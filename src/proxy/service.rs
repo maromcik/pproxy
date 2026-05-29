@@ -619,7 +619,7 @@ impl PingoraService {
                 peer
             }
         };
-        debug!("{} -> PROXY TO -> {}", metadata, peer._address);
+        info!("REQ:PROXY: {} -> PROXY TO -> {}", metadata, peer._address);
         Ok(peer)
     }
 }
@@ -713,7 +713,7 @@ impl ProxyHttp for PingoraService {
             .as_ref()
             .and_then(|key| self.monitors.get(key))
         else {
-            info!("REQ:NO_TRACKER: {metadata}");
+            debug!("REQ:NO_TRACKER: {metadata}");
             return Ok(false);
         };
 
@@ -745,7 +745,7 @@ impl ProxyHttp for PingoraService {
                 "Auto suspend/wake up is disabled, please contact the administrator."
             }
             (_, _) => {
-                info!("REQ:TRACKER_UPDATED: {metadata}");
+                debug!("REQ:TRACKER_UPDATED: {metadata}");
                 let mut timer = monitor.timer.write().await;
                 *timer = Instant::now();
                 return Ok(false);
