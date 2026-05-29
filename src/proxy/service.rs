@@ -650,8 +650,7 @@ impl ProxyHttp for PingoraService {
                 "Server name not supported by pproxy",
             ));
         };
-
-        for method in &server.proxy.methods {
+        for method in &server.proxy_methods.methods {
             match method {
                 ProxyMethod::Exact(upstream_selector) => {
                     return self.select_upstream(upstream_selector, metadata);

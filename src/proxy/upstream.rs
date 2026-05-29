@@ -1,7 +1,6 @@
-use std::{collections::HashMap, net::ToSocketAddrs, sync::Arc, time::Duration};
+use std::{collections::HashMap, fmt::Debug, net::ToSocketAddrs, sync::Arc, time::Duration};
 
 use itertools::Itertools;
-use log::error;
 use pingora::{
     lb::{LoadBalancer, health_check::TcpHealthCheck, selection::Consistent},
     services::background::{GenBackgroundService, background_service},
@@ -13,26 +12,35 @@ use crate::{
     error::AppError,
 };
 
-pub struct ProxyServerConfig {
-    pub proxy: ProxyMethods,
+pub struct ServersWithLoadBalancers(pub HashMap<String, ProxyServer>);
+
+impl ServersWithLoadBalancers {
+    pub fn get_server(&self, name: &str) -> Option<&ProxyServer> {
+        self.0.get(name.strip_prefix("www.").unwrap_or(name))
+    }
+}
+
+pub struct ProxyServer {
+    pub proxy_methods: ProxyMethods,
     pub server_config: ServerConfig,
 }
 
-pub struct ProxyServerConfigWithHealthchecks {
-    pub proxy_server: ProxyServerConfig,
+pub struct ProxyServerWithHealthchecks {
+    pub proxy_server: ProxyServer,
     pub healthchecks: Vec<GenBackgroundService<LoadBalancer<Consistent>>>,
 }
 
-impl ProxyServerConfig {
+impl ProxyServer {
     fn build_load_balancer_server(
         config: ServerConfig,
-    ) -> Result<ProxyServerConfigWithHealthchecks, AppError> {
-        let mut proxy_configs: Vec<ProxyMethod> = Vec::new();
+    ) -> Result<ProxyServerWithHealthchecks, AppError> {
+        let mut proxy_methods: Vec<ProxyMethod> = Vec::new();
         let mut healthchecks: Vec<GenBackgroundService<LoadBalancer<Consistent>>> = Vec::new();
-        for proxy in &config.proxy {
-            let mut lb = LoadBalancer::try_from_iter(proxy.upstreams.keys().map(String::from))?;
+        for proxy_to_config in &config.proxy {
+            let mut lb =
+                LoadBalancer::try_from_iter(proxy_to_config.upstreams.keys().map(String::from))?;
             let mut new_upstreams: HashMap<String, UpstreamConfig> = HashMap::new();
-            for (name, upstream) in &proxy.upstreams {
+            for (name, upstream) in &proxy_to_config.upstreams {
                 for addr in name.to_socket_addrs()? {
                     new_upstreams.insert(addr.to_string(), upstream.clone());
                 }
@@ -45,96 +53,83 @@ impl ProxyServerConfig {
             let background = background_service(
                 format!(
                     "Health Check for upstreams: <{}>",
-                    proxy.upstreams.iter().map(|u| u.0).join("; ")
+                    proxy_to_config.upstreams.iter().map(|u| u.0).join("; ")
                 )
                 .as_str(),
                 lb,
             );
 
             let lb: Arc<LoadBalancer<Consistent>> = background.task();
-            error!("upstreams: {:?}", new_upstreams);
-            let proxy_config = if let Some(path) = &proxy.path {
-                ProxyMethod::Regex(PathUpstreamSelector {
-                    path: Regex::new(path.as_str())
-                        .map_err(|e| AppError::ParseError(e.to_string()))?,
-                    upstream: UpstreamSelector::LB(LbUpstream::new(lb, new_upstreams)),
-                })
+            let upstream = UpstreamSelector::LB(LbUpstream::new(lb, new_upstreams));
+            let proxy_method = if let Some(path) = &proxy_to_config.path {
+                let path =
+                    Regex::new(path.as_str()).map_err(|e| AppError::ParseError(e.to_string()))?;
+                ProxyMethod::Regex(PathUpstreamSelector { path, upstream })
             } else {
-                ProxyMethod::Exact(UpstreamSelector::LB(LbUpstream::new(lb, new_upstreams)))
+                ProxyMethod::Exact(upstream)
             };
 
             healthchecks.push(background);
-            proxy_configs.push(proxy_config);
+            proxy_methods.push(proxy_method);
         }
 
-        let proxy_server_config = Self {
-            proxy: ProxyMethods {
-                methods: proxy_configs,
+        let proxy_server = Self {
+            proxy_methods: ProxyMethods {
+                methods: proxy_methods,
             },
             server_config: config,
         };
 
-        Ok(ProxyServerConfigWithHealthchecks {
-            proxy_server: proxy_server_config,
+        Ok(ProxyServerWithHealthchecks {
+            proxy_server,
             healthchecks,
         })
     }
 
-    pub fn build_direct_server(config: ServerConfig) -> Result<ProxyServerConfig, AppError> {
-        let proxy_to = config.proxy.first().ok_or_else(|| {
-            AppError::ConfigError(
-                "Server config must contain exactly 1 proxy configuration".to_string(),
-            )
-        })?;
+    pub fn build_direct_server(
+        config: ServerConfig,
+    ) -> Result<ProxyServerWithHealthchecks, AppError> {
+        let mut proxy_methods: Vec<ProxyMethod> = Vec::new();
 
-        let (addr, upstream_config) = proxy_to.upstreams.iter().next().ok_or_else(|| {
-            AppError::ConfigError("Proxy config must contain exactly 1 upstream server".to_string())
-        })?;
-
-        let proxy_config = if let Some(path) = &proxy_to.path {
-            Self {
-                proxy: ProxyMethods {
-                    methods: vec![ProxyMethod::Regex(PathUpstreamSelector {
-                        path: Regex::new(path.as_str())
-                            .map_err(|e| AppError::ParseError(e.to_string()))?,
-                        upstream: UpstreamSelector::Direct(DirectUpstream::new(
-                            addr.clone(),
-                            upstream_config.clone(),
-                        )),
-                    })],
-                },
-                server_config: config,
-            }
-        } else {
-            Self {
-                proxy: ProxyMethods {
-                    methods: vec![ProxyMethod::Exact(UpstreamSelector::Direct(
-                        DirectUpstream::new(addr.clone(), upstream_config.clone()),
-                    ))],
-                },
-                server_config: config,
-            }
+        for proxy_to_config in &config.proxy {
+            let upstream_config = proxy_to_config
+                .upstreams
+                .iter()
+                .next()
+                .ok_or_else(|| AppError::ParseError("No upstream config found".to_string()))?;
+            let upstream = UpstreamSelector::Direct(DirectUpstream::new(
+                upstream_config.0.clone(),
+                upstream_config.1.clone(),
+            ));
+            let proxy_method = if let Some(path) = &proxy_to_config.path {
+                let path =
+                    Regex::new(path.as_str()).map_err(|e| AppError::ParseError(e.to_string()))?;
+                ProxyMethod::Regex(PathUpstreamSelector { path, upstream })
+            } else {
+                ProxyMethod::Exact(upstream)
+            };
+            proxy_methods.push(proxy_method);
+        }
+        let proxy_server = Self {
+            proxy_methods: ProxyMethods {
+                methods: proxy_methods,
+            },
+            server_config: config,
         };
-
-        Ok(proxy_config)
+        Ok(ProxyServerWithHealthchecks {
+            proxy_server,
+            healthchecks: Vec::new(),
+        })
     }
 
-    pub fn from_config(
-        config: ServerConfig,
-    ) -> Result<Vec<ProxyServerConfigWithHealthchecks>, AppError> {
+    pub fn from_config(config: ServerConfig) -> Result<Vec<ProxyServerWithHealthchecks>, AppError> {
         let mut servers = Vec::new();
         for proxy in &config.proxy {
             if proxy.upstreams.len() > 1 {
                 let server = Self::build_load_balancer_server(config.clone())?;
                 servers.push(server);
             } else {
-                let server =
-                    ProxyServerConfig::build_direct_server(config.clone()).map(|proxy_server| {
-                        ProxyServerConfigWithHealthchecks {
-                            proxy_server,
-                            healthchecks: Vec::new(),
-                        }
-                    })?;
+                let server = Self::build_direct_server(config.clone())?;
                 servers.push(server);
             }
         }
@@ -142,14 +137,30 @@ impl ProxyServerConfig {
     }
 }
 
-pub struct ServersWithLoadBalancers(pub HashMap<String, ProxyServerConfig>);
-
-impl ServersWithLoadBalancers {
-    pub fn get_server(&self, name: &str) -> Option<&ProxyServerConfig> {
-        self.0.get(name.strip_prefix("www.").unwrap_or(name))
-    }
+#[derive(Clone, Debug)]
+pub struct ProxyMethods {
+    pub methods: Vec<ProxyMethod>,
 }
 
+#[derive(Clone, Debug)]
+pub enum ProxyMethod {
+    Exact(UpstreamSelector),
+    Regex(PathUpstreamSelector),
+}
+
+#[derive(Clone, Debug)]
+pub struct PathUpstreamSelector {
+    pub path: Regex,
+    pub upstream: UpstreamSelector,
+}
+
+#[derive(Clone, Debug)]
+pub enum UpstreamSelector {
+    Direct(DirectUpstream),
+    LB(LbUpstream),
+}
+
+#[derive(Debug, Clone)]
 pub struct DirectUpstream {
     pub addr: String,
     pub config: UpstreamConfig,
@@ -161,9 +172,16 @@ impl DirectUpstream {
     }
 }
 
+#[derive(Clone)]
 pub struct LbUpstream {
     pub lb: Arc<LoadBalancer<Consistent>>,
     pub configs: HashMap<String, UpstreamConfig>,
+}
+
+impl Debug for LbUpstream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "LbUpstream for configs: {:?}", self.configs)
+    }
 }
 
 impl LbUpstream {
@@ -173,23 +191,4 @@ impl LbUpstream {
     ) -> Self {
         Self { lb, configs }
     }
-}
-
-pub struct PathUpstreamSelector {
-    pub path: Regex,
-    pub upstream: UpstreamSelector,
-}
-
-pub enum UpstreamSelector {
-    Direct(DirectUpstream),
-    LB(LbUpstream),
-}
-
-pub struct ProxyMethods {
-    pub methods: Vec<ProxyMethod>,
-}
-
-pub enum ProxyMethod {
-    Exact(UpstreamSelector),
-    Regex(PathUpstreamSelector),
 }

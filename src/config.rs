@@ -9,9 +9,6 @@ use std::net::IpAddr;
 use std::time::Duration;
 use tracing::debug;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Servers(pub HashMap<String, ServerConfig>);
-
 fn default_info() -> String {
     String::from("info")
 }
@@ -20,11 +17,47 @@ fn default_static_files() -> String {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ProxyToConfig {
+pub struct AppConfig {
+    pub control: Option<ControlConfig>,
+
     #[serde(default)]
-    pub path: Option<String>,
-    pub upstreams: HashMap<String, UpstreamConfig>,
+    pub hosts: HashMap<String, HostConfig>,
+
+    #[serde(default)]
+    pub monitors: HashMap<String, MonitorConfig>,
+
+    #[serde(default)]
+    pub waf: Option<WafConfig>,
+
+    #[serde(default = "default_info")]
+    pub app_log_level: String,
+    #[serde(default = "default_info")]
+    pub all_log_level: String,
+    #[serde(default = "default_static_files")]
+    pub static_files_path: String,
 }
+
+impl AppConfig {
+    pub fn parse_config(settings_path: &str) -> Result<AppConfig, AppError> {
+        let settings = Config::builder()
+            .add_source(config::File::with_name(settings_path))
+            .add_source(config::Environment::with_prefix("APP"))
+            .build()?;
+
+        let config = settings.try_deserialize::<AppConfig>()?;
+
+        Ok(config)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HostConfig {
+    pub tls: bool,
+    pub servers: Servers,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Servers(pub HashMap<String, ServerConfig>);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ServerConfig {
@@ -53,6 +86,13 @@ pub struct ServerConfig {
     pub rewrite_rules: Vec<PathRule>,
     #[serde(default)]
     pub redirect_rules: Vec<PathRule>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProxyToConfig {
+    #[serde(default)]
+    pub path: Option<String>,
+    pub upstreams: HashMap<String, UpstreamConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -149,12 +189,6 @@ pub enum RuleAction {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct HostConfig {
-    pub tls: bool,
-    pub servers: Servers,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MonitorConfig {
     #[serde(default, with = "humantime_serde")]
     pub suspend_timeout: Duration,
@@ -187,38 +221,4 @@ pub struct WafConfig {
     pub blocklist_url: Option<String>,
     pub geo_api_url: String,
     pub geo_cache_file_path: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AppConfig {
-    pub control: Option<ControlConfig>,
-
-    #[serde(default)]
-    pub hosts: HashMap<String, HostConfig>,
-
-    #[serde(default)]
-    pub monitors: HashMap<String, MonitorConfig>,
-
-    #[serde(default)]
-    pub waf: Option<WafConfig>,
-
-    #[serde(default = "default_info")]
-    pub app_log_level: String,
-    #[serde(default = "default_info")]
-    pub all_log_level: String,
-    #[serde(default = "default_static_files")]
-    pub static_files_path: String,
-}
-
-impl AppConfig {
-    pub fn parse_config(settings_path: &str) -> Result<AppConfig, AppError> {
-        let settings = Config::builder()
-            .add_source(config::File::with_name(settings_path))
-            .add_source(config::Environment::with_prefix("APP"))
-            .build()?;
-
-        let config = settings.try_deserialize::<AppConfig>()?;
-
-        Ok(config)
-    }
 }

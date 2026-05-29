@@ -8,7 +8,7 @@ use crate::error::AppError;
 use crate::management::init_control;
 use crate::management::monitoring::monitor::{MonitorState, Monitors};
 use crate::proxy::service::PingoraService;
-use crate::proxy::upstream::{ProxyServerConfig, ServersWithLoadBalancers};
+use crate::proxy::upstream::{ProxyServer, ServersWithLoadBalancers};
 use crate::proxy::waf::WafParsedConfig;
 use clap::Parser;
 use pingora::prelude::*;
@@ -68,7 +68,7 @@ fn init_pingora(
         let mut servers_with_load_balancers = HashMap::new();
 
         for (sni, server_config) in servers.0 {
-            let proxy_server_with_healthcheck = ProxyServerConfig::from_config(server_config)?;
+            let proxy_server_with_healthcheck = ProxyServer::from_config(server_config)?;
 
             for srv in proxy_server_with_healthcheck {
                 for health_check in srv.healthchecks {
