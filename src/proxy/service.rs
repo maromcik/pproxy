@@ -66,27 +66,27 @@ impl TlsSelector {
 impl TlsAccept for TlsSelector {
     async fn certificate_callback(&self, ssl: &mut TlsRef) -> () {
         let Some(sni_provided) = ssl.servername(ssl::NameType::HOST_NAME) else {
-            warn!("No SNI provided");
+            warn!("TLS: No SNI provided");
             return;
         };
-        debug!("SNI provided: {}", sni_provided);
+        debug!("TLS: SNI provided: {}", sni_provided);
         let Some(certs) = self.0.get(sni_provided) else {
-            warn!("No certificate found for SNI: {}", sni_provided);
+            warn!("TLS: No certificate found for SNI: {}", sni_provided);
             return;
         };
 
         if let Err(e) = tls::ext::ssl_use_certificate(ssl, certs.leaf()) {
-            error!("Could not add leaf cert: {}", e);
+            error!("TLS: Could not add leaf cert: {}", e);
         }
 
         for (i, cert) in certs.intermediates().iter().enumerate() {
             if let Err(e) = tls::ext::ssl_add_chain_cert(ssl, cert) {
-                error!("Could not add intermediate cert {}: {}", i, e);
+                error!("TLS: Could not add intermediate cert {}: {}", i, e);
             }
         }
 
         if let Err(e) = tls::ext::ssl_use_private_key(ssl, certs.key()) {
-            error!("Could not set private key: {}", e);
+            error!("TLS: Could not set private key: {}", e);
         }
     }
 }
@@ -195,14 +195,14 @@ impl RequestMetadata {
                 SocketAddr::Unix(_) => String::new(),
             })
             .unwrap_or_default();
-        debug!("Client SocketAddr: {}", client_addr);
+        debug!("METADATA: Client SocketAddr: {}", client_addr);
 
         let client_forwarded = headers
             .headers
             .get("X-Forwarded-For")
             .and_then(|h| h.to_str().ok())
             .map(String::from);
-        debug!("Client ForwardedIP: {:?}", client_forwarded);
+        debug!("METADATA: Client ForwardedIP: {:?}", client_forwarded);
         let host = headers
             .headers
             .get("Host")
@@ -255,7 +255,7 @@ impl PingoraService {
             return;
         };
         let Some(blocklist_url) = &waf.waf_config.blocklist_url else {
-            trace!("Blocklist disabled");
+            trace!("BLOCKLIST: Blocklist disabled");
             return;
         };
 
@@ -314,7 +314,7 @@ impl PingoraService {
             return None;
         };
         if let Some(geo_data) = waf.geo_fence.read().await.get(&metadata.client_ip) {
-            debug!("geolocation cache hit: {:?}", geo_data);
+            debug!("GEO: Geolocation cache hit: {:?}", geo_data);
             return Some(self.is_geo_data_blocked(geo_data, server_config));
         }
         None
@@ -331,7 +331,7 @@ impl PingoraService {
 
         if server.geo_fence_isp_blocklist.is_none() && server.geo_fence_country_allowlist.is_none()
         {
-            debug!("empty geo fence allowlist");
+            debug!("GEO: Empty geo fence allowlist");
             return Ok(false);
         };
 
@@ -368,7 +368,7 @@ impl PingoraService {
             info!("ALLOWED:GEO; LOC: <{geo_data}>; REQ <{metadata}>");
         }
         if let Err(e) = waf.geo_cache_writer.send(data.clone()).await {
-            warn!("could not send GeoData: {data}; {e}")
+            warn!("GEO: could not send GeoData: {data}; {e}")
         }
         Ok(blocked)
     }
@@ -450,7 +450,7 @@ impl PingoraService {
 
         for rule in &server.server_config.rewrite_rules {
             let Ok(re) = Regex::new(&rule.pattern) else {
-                warn!("Invalid rewrite regex: {}", rule.pattern);
+                warn!("REWRITE: Invalid rewrite regex: {}", rule.pattern);
                 continue;
             };
 
@@ -479,7 +479,7 @@ impl PingoraService {
         match full_uri.parse() {
             Ok(uri) => req.set_uri(uri),
             Err(e) => {
-                error!("URI rewrite failed: {}", e);
+                error!("REWRITE: URI rewrite failed: {}", e);
             }
         }
     }
@@ -501,7 +501,7 @@ impl PingoraService {
 
         for rule in &server.server_config.redirect_rules {
             let Ok(re) = Regex::new(&rule.pattern) else {
-                warn!("Invalid redirect regex: {}", rule.pattern);
+                warn!("REDIRECT: Invalid redirect regex: {}", rule.pattern);
                 continue;
             };
 
@@ -519,12 +519,12 @@ impl PingoraService {
                     );
 
                     let mut resp = ResponseHeader::build(302, None).map_err(|e| {
-                        error!("Failed to build redirect response: {}", e);
+                        error!("REDIRECT: Failed to build redirect response: {}", e);
                         Error::explain(HTTPStatus(500), "Internal server error")
                     })?;
 
                     resp.insert_header("Location", target).map_err(|e| {
-                        error!("Failed to set Location header: {}", e);
+                        error!("REDIRECT: Failed to set Location header: {}", e);
                         Error::explain(HTTPStatus(500), "Internal server error")
                     })?;
 
@@ -532,12 +532,12 @@ impl PingoraService {
                         .write_response_header(Box::new(resp), true)
                         .await
                         .map_err(|e| {
-                            error!("Failed to write redirect response: {}", e);
+                            error!("REDIRECT: Failed to write redirect response: {}", e);
                             Error::explain(HTTPStatus(500), "Internal server error")
                         })?;
 
                     session.write_response_body(None, true).await.map_err(|e| {
-                        error!("Failed to write redirect response body: {}", e);
+                        error!("REDIRECT: Failed to write redirect response body: {}", e);
                         Error::explain(HTTPStatus(500), "Internal server error")
                     })?;
 
@@ -687,7 +687,7 @@ impl ProxyHttp for PingoraService {
 
         let Some(server) = self.servers.get_server(&metadata.host) else {
             warn!(
-                "could not find the server configuration for host: {}",
+                "REQ: Could not find the server configuration for host: {}",
                 metadata.host
             );
             session.set_keepalive(None);
@@ -796,7 +796,6 @@ impl ProxyHttp for PingoraService {
         };
 
         upstream_request.insert_header("X-Real-IP", metadata.client_ip.to_string())?;
-
         let mut forwarded_for = String::new();
         if let Some(existing_xff) = session
             .get_header("X-Forwarded-For")
@@ -806,7 +805,7 @@ impl ProxyHttp for PingoraService {
             forwarded_for.push_str(", ");
         }
         forwarded_for.push_str(&metadata.client_ip.to_string());
-
+        debug!("UPSTREAM_REQUEST:HEADER:X-Forwarded-For: {forwarded_for}");
         upstream_request.insert_header("X-Forwarded-For", &forwarded_for)?;
 
         let Some(server) = self.servers.get_server(&metadata.host) else {
