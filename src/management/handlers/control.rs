@@ -22,10 +22,16 @@ pub async fn control_monitor(
 
     let message = match params.action.as_deref() {
         Some("resume") => {
-            monitor.wake_up.store(true, Ordering::Release);
-            let msg = "admin: upstream waking up";
-            info!("{msg}");
-            Some(msg.to_string())
+            if monitor.suspending.load(Ordering::Acquire) {
+                let msg = "admin: upstream suspending, wait, then retry";
+                warn!("{msg}");
+                Some(msg.to_string())
+            } else {
+                monitor.wake_up.store(true, Ordering::Release);
+                let msg = "admin: upstream waking up";
+                info!("{msg}");
+                Some(msg.to_string())
+            }
         }
         Some("suspend") => {
             if monitor.suspending.load(Ordering::Acquire) {
