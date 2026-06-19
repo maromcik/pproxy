@@ -99,7 +99,7 @@ pub async fn control_monitor(
         waking_up: monitor.wake_up.load(Ordering::Relaxed),
         suspending: monitor.suspending.load(Ordering::Relaxed),
         limit: format!("{:?}", monitor.limit),
-        elapsed: format!("{:.2?}", elapsed),
+        elapsed: format!("{:.2?} m", elapsed.as_secs() as f64 / 60_f64),
         active_time: format!(
             "{:.2?} m",
             time_monitoring.active_time.as_secs() as f64 / 60_f64
