@@ -1,34 +1,28 @@
-use crate::config::{H2OptionsConfig, IpSource, ServerConfig, UpstreamConfig};
+use crate::config::{H2OptionsConfig, IpSource, ServerConfig};
 use crate::error::AppError;
 use crate::management::monitoring::monitor::Monitors;
 use crate::management::templates::templates::PublicPageTemplate;
 use crate::proxy::blocklist::BlocklistIp;
 use crate::proxy::geo::GeoData;
+use crate::proxy::tls::TlsSelector;
 use crate::proxy::upstream::UpstreamSelector;
 use crate::proxy::upstream::{ProxyMethod, ServersWithLoadBalancers};
+use crate::proxy::utils::{self, RequestMetadata, apply_opt};
 use crate::proxy::waf::{Waf, WafParsedConfig};
 use askama::Template;
 use async_trait::async_trait;
 use ipnetwork::IpNetwork;
 use log::info;
 use pingora::http::{RequestHeader, ResponseHeader};
-use pingora::listeners::TlsAccept;
 use pingora::listeners::tls::TlsSettings;
 use pingora::prelude::{HttpPeer, ProxyHttp, Session};
-use pingora::protocols::TcpKeepalive;
 use pingora::protocols::http::v2::server::H2Options;
-use pingora::protocols::l4::socket::SocketAddr;
-use pingora::protocols::tls::TlsRef;
 use pingora::proxy::HttpProxy;
 use pingora::server::configuration::ServerConf;
 use pingora::services::listening::Service;
-use pingora::tls::ssl;
-use pingora::utils::tls::CertKey;
-use pingora::{Error, HTTPStatus, tls};
+use pingora::{Error, HTTPStatus};
 use regex::Regex;
 use reqwest::Client;
-use std::collections::HashMap;
-use std::fmt::Display;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -36,63 +30,6 @@ use time::OffsetDateTime;
 
 use tokio::time::Instant;
 use tracing::{debug, error, trace, warn};
-
-#[derive(Debug, Clone)]
-pub struct TlsSelector(HashMap<String, CertKey>);
-
-impl TlsSelector {
-    pub fn new(servers: &ServersWithLoadBalancers) -> Result<Self, AppError> {
-        let mut res = HashMap::new();
-        for (sni, server) in &servers.0 {
-            if let (Some(cert), Some(key)) = (
-                server.server_config.cert_path.as_ref(),
-                server.server_config.key_path.as_ref(),
-            ) {
-                let sni = sni.split(':').next().unwrap_or(sni).to_string();
-                let cert_bytes = std::fs::read(cert)
-                    .map_err(|e| AppError::IOError(format!("Certificate {cert} not found: {e}")))?;
-                let certs = tls::x509::X509::stack_from_pem(&cert_bytes)?;
-
-                let key_bytes = std::fs::read(key)?;
-                let key = tls::pkey::PKey::private_key_from_pem(&key_bytes)
-                    .map_err(|e| AppError::IOError(format!("Key {key} not found: {e}")))?;
-                let pair = CertKey::new(certs, key);
-                res.insert(sni.clone(), pair);
-            }
-        }
-
-        Ok(Self(res))
-    }
-}
-
-#[async_trait]
-impl TlsAccept for TlsSelector {
-    async fn certificate_callback(&self, ssl: &mut TlsRef) -> () {
-        let Some(sni_provided) = ssl.servername(ssl::NameType::HOST_NAME) else {
-            warn!("TLS: No SNI provided");
-            return;
-        };
-        debug!("TLS: SNI provided: {}", sni_provided);
-        let Some(certs) = self.0.get(sni_provided) else {
-            warn!("TLS: No certificate found for SNI: {}", sni_provided);
-            return;
-        };
-
-        if let Err(e) = tls::ext::ssl_use_certificate(ssl, certs.leaf()) {
-            error!("TLS: Could not add leaf cert: {}", e);
-        }
-
-        for (i, cert) in certs.intermediates().iter().enumerate() {
-            if let Err(e) = tls::ext::ssl_add_chain_cert(ssl, cert) {
-                error!("TLS: Could not add intermediate cert {}: {}", i, e);
-            }
-        }
-
-        if let Err(e) = tls::ext::ssl_use_private_key(ssl, certs.key()) {
-            error!("TLS: Could not set private key: {}", e);
-        }
-    }
-}
 
 pub struct PingoraService {
     pub listen_addr: core::net::SocketAddr,
@@ -131,22 +68,22 @@ impl PingoraService {
     ) -> Result<impl pingora::services::Service, AppError> {
         let selector = Box::new(TlsSelector::new(&self.servers)?);
         let mut h2options = H2Options::default();
-        if let Some(initial_connection_window_size) = self.h2_options.initial_connection_window_size
-        {
-            h2options.initial_connection_window_size(initial_connection_window_size);
-        }
-        if let Some(initial_window_size) = self.h2_options.initial_window_size {
-            h2options.initial_window_size(initial_window_size);
-        }
-        if let Some(max_concurrent_streams) = self.h2_options.max_concurrent_streams {
-            h2options.max_concurrent_streams(max_concurrent_streams);
-        }
-        if let Some(max_frame_size) = self.h2_options.max_frame_size {
-            h2options.max_frame_size(max_frame_size);
-        }
-        if let Some(max_send_buffer_size) = self.h2_options.max_send_buffer_size {
-            h2options.max_send_buffer_size(max_send_buffer_size);
-        }
+
+        apply_opt(self.h2_options.initial_connection_window_size, |v| {
+            h2options.initial_connection_window_size(v);
+        });
+        apply_opt(self.h2_options.initial_window_size, |v| {
+            h2options.initial_window_size(v);
+        });
+        apply_opt(self.h2_options.max_concurrent_streams, |v| {
+            h2options.max_concurrent_streams(v);
+        });
+        apply_opt(self.h2_options.max_frame_size, |v| {
+            h2options.max_frame_size(v);
+        });
+        apply_opt(self.h2_options.max_send_buffer_size, |v| {
+            h2options.max_send_buffer_size(v);
+        });
 
         let mut proxy = HttpProxy::new(self, server_conf.clone());
         proxy.handle_init_modules();
@@ -169,112 +106,6 @@ impl PingoraService {
 #[derive(Clone, Debug, Default)]
 pub struct ProxyContext {
     metadata: Option<RequestMetadata>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-struct RequestMetadata {
-    user_agent: String,
-    client_ip: IpAddr,
-    forwarded_ip: Option<IpAddr>,
-    full_url: url::Url,
-    host: String,
-    port: u16,
-    method: String,
-    uri: String,
-    scheme: String,
-    query: String,
-    version: String,
-}
-
-impl Display for RequestMetadata {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} -- {} {} {} '{}'",
-            self.client_ip,
-            self.version,
-            self.method,
-            self.full_url.as_str(),
-            self.user_agent
-        )
-    }
-}
-
-impl RequestMetadata {
-    pub fn parse(
-        session: &Session,
-        listen_addr: core::net::SocketAddr,
-        tls: bool,
-    ) -> Result<Self, AppError> {
-        let headers = session.req_header();
-
-        let user_agent = headers
-            .headers
-            .get("User-Agent")
-            .and_then(|h| h.to_str().ok())
-            .map(String::from)
-            .unwrap_or_default();
-
-        let client_addr = session
-            .client_addr()
-            .map(|addr| match addr {
-                SocketAddr::Inet(ip) => ip.ip().to_string(),
-                SocketAddr::Unix(_) => String::new(),
-            })
-            .unwrap_or_default();
-        debug!("METADATA: Client SocketAddr: {}", client_addr);
-
-        let client_forwarded = headers
-            .headers
-            .get("X-Forwarded-For")
-            .and_then(|h| h.to_str().ok())
-            .map(String::from);
-        debug!("METADATA: Client ForwardedIP: {:?}", client_forwarded);
-        let host = headers
-            .headers
-            .get("Host")
-            .and_then(|h| h.to_str().ok())
-            .map(str::to_string)
-            .or_else(|| headers.uri.authority().map(|a| a.as_str().to_string()))
-            .unwrap_or_default();
-
-        let method = headers.method.as_str().to_string();
-        let uri = headers.uri.path().to_string();
-        let scheme = if tls { "https" } else { "http" }.to_string();
-        let query = headers.uri.query();
-        let port = listen_addr.port();
-        let mut full_url = url::Url::parse(&format!("{scheme}://{host}"))?;
-        full_url.set_query(query);
-        full_url.set_path(&uri);
-
-        let parsed_ip: IpAddr = client_addr.parse()?;
-
-        let normalized_ip = match parsed_ip {
-            IpAddr::V4(v4) => IpAddr::V4(v4),
-            IpAddr::V6(v6) => {
-                if let Some(v4) = v6.to_ipv4_mapped() {
-                    IpAddr::V4(v4)
-                } else {
-                    IpAddr::V6(v6)
-                }
-            }
-        };
-
-        Ok(Self {
-            user_agent,
-            client_ip: normalized_ip,
-            forwarded_ip: client_forwarded.and_then(|ip| ip.parse().ok()),
-            full_url,
-            host,
-            port,
-            method,
-            uri,
-            scheme,
-            query: query.unwrap_or_default().to_string(),
-            version: format!("{:?}", session.req_header().version),
-        })
-    }
 }
 
 impl PingoraService {
@@ -576,35 +407,6 @@ impl PingoraService {
         Ok(true)
     }
 
-    fn set_upstream_options(peer: &mut Box<HttpPeer>, upstream_config: &UpstreamConfig) {
-        peer.options.tcp_keepalive =
-            Some(TcpKeepalive::from(upstream_config.tcp_keepalive.clone()));
-        if let Some(connection_timeout) = upstream_config.connection_timeout {
-            peer.options.connection_timeout = Some(connection_timeout);
-        }
-        if let Some(read_timeout) = upstream_config.read_timeout {
-            peer.options.read_timeout = Some(read_timeout);
-        }
-        if let Some(write_timeout) = upstream_config.write_timeout {
-            peer.options.write_timeout = Some(write_timeout);
-        }
-        if let Some(idle_timeout) = upstream_config.idle_timeout {
-            peer.options.idle_timeout = Some(idle_timeout);
-        }
-        if let Some(total_connection_timeout) = upstream_config.total_connection_timeout {
-            peer.options.total_connection_timeout = Some(total_connection_timeout);
-        }
-        if let Some(tcp_recv_buf) = upstream_config.tcp_recv_buf {
-            peer.options.tcp_recv_buf = Some(tcp_recv_buf);
-        }
-        if let Some(max_h2_streams) = upstream_config.max_h2_streams {
-            peer.options.max_h2_streams = max_h2_streams;
-        }
-        if let Some(tcp_fast_open) = upstream_config.tcp_fast_open {
-            peer.options.tcp_fast_open = tcp_fast_open;
-        }
-    }
-
     fn select_upstream(
         &self,
         upstream_selector: &UpstreamSelector,
@@ -617,7 +419,7 @@ impl PingoraService {
                     upstream.config.tls,
                     String::default(),
                 ));
-                Self::set_upstream_options(&mut peer, &upstream.config);
+                utils::set_upstream_options(&mut peer, &upstream.config);
                 peer
             }
             UpstreamSelector::LB(lb) => {
@@ -642,7 +444,7 @@ impl PingoraService {
                     upstream_config.tls,
                     String::default(),
                 ));
-                Self::set_upstream_options(&mut peer, upstream_config);
+                utils::set_upstream_options(&mut peer, upstream_config);
                 peer.options.alpn = pingora::protocols::ALPN::H2;
                 peer
             }
