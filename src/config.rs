@@ -112,16 +112,22 @@ pub struct UpstreamConfig {
     #[serde(default)]
     pub tcp_recv_buf: Option<usize>,
     #[serde(default)]
+    pub max_h2_streams: Option<usize>,
+    #[serde(default)]
     pub tcp_fast_open: Option<bool>,
     #[serde(default)]
-    pub tcp_keep_alive: Option<TcpKeepAliveConfig>,
+    pub tcp_keepalive: Option<TcpKeepAliveConfig>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct TcpKeepAliveConfig {
+    #[serde(default, with = "humantime_serde")]
     idle: Option<Duration>,
+    #[serde(default, with = "humantime_serde")]
     interval: Option<Duration>,
+    #[serde(default)]
     count: Option<usize>,
+    #[serde(default, with = "humantime_serde")]
     user_timeout: Option<Duration>,
 }
 

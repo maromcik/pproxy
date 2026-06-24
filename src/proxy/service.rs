@@ -127,8 +127,8 @@ impl PingoraService {
         let mut service = http_proxy_service(&server_conf.clone(), self);
 
         if tls {
-            let mut tls_settings = TlsSettings::with_callbacks(selector.clone())?;
-            tls_settings.enable_h2();
+            let tls_settings = TlsSettings::with_callbacks(selector.clone())?;
+            // tls_settings.enable_h2();
             service.add_tls_with_settings(host.as_str(), None, tls_settings);
         } else {
             service.add_tcp(host.as_str())
@@ -550,7 +550,7 @@ impl PingoraService {
 
     fn set_upstream_options(peer: &mut Box<HttpPeer>, upstream_config: &UpstreamConfig) {
         peer.options.tcp_keepalive = Some(TcpKeepalive::from(
-            upstream_config.tcp_keep_alive.clone().unwrap_or_default(),
+            upstream_config.tcp_keepalive.clone().unwrap_or_default(),
         ));
         if let Some(connection_timeout) = upstream_config.connection_timeout {
             peer.options.connection_timeout = Some(connection_timeout);
@@ -571,6 +571,10 @@ impl PingoraService {
 
         if let Some(tcp_recv_buf) = upstream_config.tcp_recv_buf {
             peer.options.tcp_recv_buf = Some(tcp_recv_buf);
+        }
+
+        if let Some(max_h2_streams) = upstream_config.max_h2_streams {
+            peer.options.max_h2_streams = max_h2_streams;
         }
 
         if let Some(tcp_fast_open) = upstream_config.tcp_fast_open {
@@ -616,6 +620,7 @@ impl PingoraService {
                     String::default(),
                 ));
                 Self::set_upstream_options(&mut peer, upstream_config);
+                peer.options.alpn = pingora::protocols::ALPN::H2;
                 peer
             }
         };
