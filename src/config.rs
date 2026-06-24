@@ -138,11 +138,11 @@ pub struct H2OptionsConfig {
 impl Default for H2OptionsConfig {
     fn default() -> Self {
         Self {
-            initial_connection_window_size: Some(1_000_000_000),
-            initial_window_size: Some(1_000_000_000),
-            max_concurrent_streams: Some(10_000),
-            max_frame_size: Some(16777200),
-            max_send_buffer_size: Some(u32::MAX as usize - 10),
+            initial_connection_window_size: Some(67_108_864),
+            initial_window_size: Some(67_108_864),
+            max_concurrent_streams: Some(1000),
+            max_frame_size: Some(1677700),
+            max_send_buffer_size: Some(419_430_400),
         }
     }
 }
