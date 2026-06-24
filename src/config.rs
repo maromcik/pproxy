@@ -12,6 +12,11 @@ use tracing::debug;
 fn default_info() -> String {
     String::from("info")
 }
+
+fn default_true() -> Option<bool> {
+    Some(true)
+}
+
 fn default_static_files() -> String {
     String::from("static")
 }
@@ -53,6 +58,8 @@ impl AppConfig {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HostConfig {
     pub tls: bool,
+    #[serde(default)]
+    pub h2_options: H2OptionsConfig,
     pub servers: Servers,
 }
 
@@ -113,10 +120,31 @@ pub struct UpstreamConfig {
     pub tcp_recv_buf: Option<usize>,
     #[serde(default)]
     pub max_h2_streams: Option<usize>,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub tcp_fast_open: Option<bool>,
     #[serde(default)]
-    pub tcp_keepalive: Option<TcpKeepAliveConfig>,
+    pub tcp_keepalive: TcpKeepAliveConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct H2OptionsConfig {
+    pub initial_connection_window_size: Option<u32>,
+    pub initial_window_size: Option<u32>,
+    pub max_concurrent_streams: Option<u32>,
+    pub max_frame_size: Option<u32>,
+    pub max_send_buffer_size: Option<usize>,
+}
+
+impl Default for H2OptionsConfig {
+    fn default() -> Self {
+        Self {
+            initial_connection_window_size: Some(1000_000_000),
+            initial_window_size: Some(1000_000_000),
+            max_concurrent_streams: Some(10_000),
+            max_frame_size: Some(16777200),
+            max_send_buffer_size: Some(u32::MAX as usize - 10),
+        }
+    }
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]

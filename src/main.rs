@@ -63,7 +63,15 @@ fn init_pingora(
     info!("Bootstrap done");
     info!("PProxy Config: {:#?}", config);
 
-    for (addr, HostConfig { tls, servers }) in config.hosts {
+    for (
+        addr,
+        HostConfig {
+            tls,
+            h2_options,
+            servers,
+        },
+    ) in config.hosts
+    {
         let addr: SocketAddr = addr.parse()?;
         let mut servers_with_load_balancers = HashMap::new();
 
@@ -81,6 +89,7 @@ fn init_pingora(
         let pproxy = PingoraService::new(
             addr,
             tls,
+            h2_options,
             monitors.clone(),
             ServersWithLoadBalancers(servers_with_load_balancers),
             waf_config.clone(),

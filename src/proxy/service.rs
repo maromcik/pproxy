@@ -1,4 +1,4 @@
-use crate::config::{IpSource, ServerConfig, UpstreamConfig};
+use crate::config::{H2OptionsConfig, IpSource, ServerConfig, UpstreamConfig};
 use crate::error::AppError;
 use crate::management::monitoring::monitor::Monitors;
 use crate::management::templates::templates::PublicPageTemplate;
@@ -14,11 +14,14 @@ use log::info;
 use pingora::http::{RequestHeader, ResponseHeader};
 use pingora::listeners::TlsAccept;
 use pingora::listeners::tls::TlsSettings;
-use pingora::prelude::{HttpPeer, ProxyHttp, Session, http_proxy_service};
+use pingora::prelude::{HttpPeer, ProxyHttp, Session};
 use pingora::protocols::TcpKeepalive;
+use pingora::protocols::http::v2::server::H2Options;
 use pingora::protocols::l4::socket::SocketAddr;
 use pingora::protocols::tls::TlsRef;
+use pingora::proxy::HttpProxy;
 use pingora::server::configuration::ServerConf;
+use pingora::services::listening::Service;
 use pingora::tls::ssl;
 use pingora::utils::tls::CertKey;
 use pingora::{Error, HTTPStatus, tls};
@@ -94,6 +97,7 @@ impl TlsAccept for TlsSelector {
 pub struct PingoraService {
     pub listen_addr: core::net::SocketAddr,
     pub tls: bool,
+    pub h2_options: H2OptionsConfig,
     pub monitors: Monitors,
     pub servers: ServersWithLoadBalancers,
     pub waf: Option<Waf>,
@@ -104,6 +108,7 @@ impl PingoraService {
     pub fn new(
         listen_addr: core::net::SocketAddr,
         tls: bool,
+        h2_options: H2OptionsConfig,
         monitors: Monitors,
         servers: ServersWithLoadBalancers,
         waf: Option<WafParsedConfig>,
@@ -112,6 +117,7 @@ impl PingoraService {
         Self {
             listen_addr,
             tls,
+            h2_options,
             monitors,
             servers,
             waf,
@@ -124,11 +130,33 @@ impl PingoraService {
         tls: bool,
     ) -> Result<impl pingora::services::Service, AppError> {
         let selector = Box::new(TlsSelector::new(&self.servers)?);
-        let mut service = http_proxy_service(&server_conf.clone(), self);
+        let mut h2options = H2Options::default();
+        if let Some(initial_connection_window_size) = self.h2_options.initial_connection_window_size
+        {
+            h2options.initial_connection_window_size(initial_connection_window_size);
+        }
+        if let Some(initial_window_size) = self.h2_options.initial_window_size {
+            h2options.initial_window_size(initial_window_size);
+        }
+        if let Some(max_concurrent_streams) = self.h2_options.max_concurrent_streams {
+            h2options.max_concurrent_streams(max_concurrent_streams);
+        }
+        if let Some(max_frame_size) = self.h2_options.max_frame_size {
+            h2options.max_frame_size(max_frame_size);
+        }
+        if let Some(max_send_buffer_size) = self.h2_options.max_send_buffer_size {
+            h2options.max_send_buffer_size(max_send_buffer_size);
+        }
+
+        let mut proxy = HttpProxy::new(self, server_conf.clone());
+        proxy.handle_init_modules();
+        proxy.h2_options = Some(h2options);
+
+        let mut service = Service::new(host.to_string(), proxy);
 
         if tls {
-            let tls_settings = TlsSettings::with_callbacks(selector.clone())?;
-            // tls_settings.enable_h2();
+            let mut tls_settings = TlsSettings::with_callbacks(selector.clone())?;
+            tls_settings.enable_h2();
             service.add_tls_with_settings(host.as_str(), None, tls_settings);
         } else {
             service.add_tcp(host.as_str())
@@ -549,9 +577,8 @@ impl PingoraService {
     }
 
     fn set_upstream_options(peer: &mut Box<HttpPeer>, upstream_config: &UpstreamConfig) {
-        peer.options.tcp_keepalive = Some(TcpKeepalive::from(
-            upstream_config.tcp_keepalive.clone().unwrap_or_default(),
-        ));
+        peer.options.tcp_keepalive =
+            Some(TcpKeepalive::from(upstream_config.tcp_keepalive.clone()));
         if let Some(connection_timeout) = upstream_config.connection_timeout {
             peer.options.connection_timeout = Some(connection_timeout);
         }
@@ -564,19 +591,15 @@ impl PingoraService {
         if let Some(idle_timeout) = upstream_config.idle_timeout {
             peer.options.idle_timeout = Some(idle_timeout);
         }
-
         if let Some(total_connection_timeout) = upstream_config.total_connection_timeout {
             peer.options.total_connection_timeout = Some(total_connection_timeout);
         }
-
         if let Some(tcp_recv_buf) = upstream_config.tcp_recv_buf {
             peer.options.tcp_recv_buf = Some(tcp_recv_buf);
         }
-
         if let Some(max_h2_streams) = upstream_config.max_h2_streams {
             peer.options.max_h2_streams = max_h2_streams;
         }
-
         if let Some(tcp_fast_open) = upstream_config.tcp_fast_open {
             peer.options.tcp_fast_open = tcp_fast_open;
         }
