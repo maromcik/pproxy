@@ -29,6 +29,8 @@ pub enum AppError {
     TemplatingError(String),
     #[error("pingora error: {0}")]
     PingoraError(String),
+    #[error("Geo API Error: {0}")]
+    GeoApiError(String),
 }
 
 impl Debug for AppError {

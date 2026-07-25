@@ -203,14 +203,17 @@ impl PingoraService {
             return Ok(blocked);
         }
         let url =
-            strfmt::strfmt!(&waf.waf_config.geo_api_url, ip => metadata.client_ip.to_string())?;
+            strfmt::strfmt!(&waf.waf_config.geo_api_url, ip => metadata.client_ip.to_string())
+                .map_err(|e| AppError::GeoApiError(format!("{e}")))?;
         let data = client
             .get(url)
             .send()
             .await?
+            .error_for_status()
+            .map_err(|e| AppError::GeoApiError(format!("{e}")))?
             .json::<GeoData>()
             .await
-            .map_err(|e| AppError::ParseError(format!("{e}")))?;
+            .map_err(|e| AppError::GeoApiError(format!("{e}")))?;
         let mut fence = waf.geo_fence.write().await;
         let geo_data = fence.entry(metadata.client_ip).or_insert(data.clone());
         let blocked = self.is_geo_data_blocked(geo_data, server);
