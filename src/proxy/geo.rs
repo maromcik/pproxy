@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use std::collections::HashMap;
@@ -103,16 +104,22 @@ impl GeoWriter {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash)]
+pub struct Location {
+    #[serde(rename = "name")]
+    pub country_name: String,
+    #[serde(rename = "alpha2")]
+    pub country_alpha2: String,
+    pub continent: String,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GeoData {
     pub ip: IpAddr,
-    pub country_name: String,
-    // pub ip_version: String,
-    pub country_code2: String,
-    // pub ip_number: u16,
+    pub network: IpNet,
+    pub asn: u32,
     pub isp: String,
-    pub response_message: String,
-    pub response_code: String,
+    pub location: Location,
 }
 
 impl GeoData {
@@ -137,7 +144,7 @@ impl Display for GeoData {
         write!(
             f,
             "IP: {}, CN: {}, CC: {}, ISP: {}",
-            self.ip, self.country_name, self.country_code2, self.isp
+            self.network, self.location.country_name, self.location.country_alpha2, self.isp
         )
     }
 }

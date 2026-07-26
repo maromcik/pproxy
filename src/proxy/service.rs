@@ -149,7 +149,7 @@ impl PingoraService {
         let country_allowed = server
             .geo_fence_country_allowlist
             .as_ref()
-            .is_none_or(|geo| geo.contains(geo_data.country_code2.as_str()));
+            .is_none_or(|geo| geo.contains(geo_data.location.country_alpha2.as_str()));
         let isp_blocked = server
             .geo_fence_isp_blocklist
             .as_ref()
@@ -221,7 +221,7 @@ impl PingoraService {
             warn!("BLOCKED:GEO; LOC <{geo_data}>; REQ <{metadata}>");
             let blocklist_data = BlocklistIp {
                 ip: IpNetwork::from(geo_data.ip),
-                country_code: Some(geo_data.country_code2.clone()),
+                country_code: Some(geo_data.location.country_alpha2.clone()),
                 isp: Some(geo_data.isp.clone()),
                 user_agent: None,
             };
