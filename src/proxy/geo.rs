@@ -143,8 +143,13 @@ impl Display for GeoData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "IP: {}, CN: {}, CC: {}, ISP: {}",
-            self.network, self.location.country_name, self.location.country_alpha2, self.isp
+            "IP: {}, SUBNET: {}, CN: {}, CC: {}, ISP: {}, AS: {}",
+            self.ip,
+            self.network,
+            self.location.country_name,
+            self.location.country_alpha2,
+            self.isp,
+            self.asn
         )
     }
 }

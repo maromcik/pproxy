@@ -1,7 +1,6 @@
 use crate::error::AppError;
 use crate::management::monitoring::monitor::MonitorState;
 use config::Config;
-use ipnetwork::IpNetwork;
 use pingora::protocols::l4::ext::TcpKeepalive;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -178,7 +177,7 @@ pub struct PathRule {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IpRule {
-    pub subnet: IpNetwork,
+    pub subnet: ipnet::IpNet,
     pub action: RuleAction,
     pub source: IpSource,
 }
@@ -201,7 +200,7 @@ impl RuleAction {
 impl IpRule {
     pub fn contains(&self, addr: Option<IpAddr>) -> bool {
         if let Some(ip) = addr
-            && self.subnet.contains(ip)
+            && self.subnet.contains(&ip)
         {
             true
         } else {

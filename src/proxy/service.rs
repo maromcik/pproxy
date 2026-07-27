@@ -11,7 +11,7 @@ use crate::proxy::utils::{self, RequestMetadata, apply_opt};
 use crate::proxy::waf::{Waf, WafParsedConfig};
 use askama::Template;
 use async_trait::async_trait;
-use ipnetwork::IpNetwork;
+use ipnet::IpNet;
 use log::info;
 use pingora::http::{RequestHeader, ResponseHeader};
 use pingora::listeners::tls::TlsSettings;
@@ -118,7 +118,7 @@ impl PingoraService {
             return;
         };
 
-        if waf.blocked_ips.read().await.contains(&data.ip.ip()) {
+        if waf.blocked_ips.read().await.contains(&data.ip.addr()) {
             info!("BLOCKLIST:DUPLICATE: {} already in the blocklist", data.ip);
             return;
         }
@@ -129,7 +129,7 @@ impl PingoraService {
             Ok(resp) => {
                 if resp.status().is_success() {
                     info!("BLOCKLIST:ADDED; {}", data.ip);
-                    waf.blocked_ips.write().await.insert(data.ip.ip());
+                    waf.blocked_ips.write().await.insert(data.ip.addr());
                 } else {
                     warn!(
                         "BLOCKLIST:FAILED; adding IP {} failed with status code: {}",
@@ -220,7 +220,7 @@ impl PingoraService {
         if blocked {
             warn!("BLOCKED:GEO; LOC <{geo_data}>; REQ <{metadata}>");
             let blocklist_data = BlocklistIp {
-                ip: IpNetwork::from(geo_data.ip),
+                ip: IpNet::from(geo_data.ip),
                 country_code: Some(geo_data.location.country_alpha2.clone()),
                 isp: Some(geo_data.isp.clone()),
                 user_agent: None,
@@ -276,7 +276,7 @@ impl PingoraService {
         {
             {
                 let blocklist_data = BlocklistIp {
-                    ip: IpNetwork::from(metadata.client_ip),
+                    ip: IpNet::from(metadata.client_ip),
                     country_code: None,
                     isp: None,
                     user_agent: Some(metadata.user_agent.clone()),
