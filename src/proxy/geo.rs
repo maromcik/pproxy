@@ -106,10 +106,9 @@ impl GeoWriter {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Location {
-    #[serde(rename = "name")]
-    pub country_name: String,
-    #[serde(rename = "alpha2")]
-    pub country_alpha2: String,
+    pub id: String,
+    pub name: String,
+    pub code: String,
     pub continent: String,
 }
 
@@ -144,12 +143,7 @@ impl Display for GeoData {
         write!(
             f,
             "IP: {}, SUBNET: {}, CN: {}, CC: {}, ISP: {}, AS: {}",
-            self.ip,
-            self.network,
-            self.location.country_name,
-            self.location.country_alpha2,
-            self.isp,
-            self.asn
+            self.ip, self.network, self.location.name, self.location.code, self.isp, self.asn
         )
     }
 }
