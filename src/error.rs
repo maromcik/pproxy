@@ -75,8 +75,8 @@ impl From<tokio::task::JoinError> for AppError {
     }
 }
 
-impl From<pingora::tls::error::ErrorStack> for AppError {
-    fn from(e: pingora::tls::error::ErrorStack) -> Self {
+impl From<pingora::tls::RusTlsError> for AppError {
+    fn from(e: pingora::tls::RusTlsError) -> Self {
         Self::TlsError(e.to_string())
     }
 }

@@ -66,7 +66,7 @@ impl PingoraService {
         host: String,
         tls: bool,
     ) -> Result<impl pingora::services::Service, AppError> {
-        let selector = Box::new(TlsSelector::new(&self.servers)?);
+        let selector = Arc::new(TlsSelector::new(&self.servers)?);
         let mut h2options = H2Options::default();
 
         apply_opt(self.h2_options.initial_connection_window_size, |v| {
@@ -92,7 +92,9 @@ impl PingoraService {
         let mut service = Service::new(host.to_string(), proxy);
 
         if tls {
-            let mut tls_settings = TlsSettings::with_callbacks(selector.clone())?;
+            // cert paths are ignored at build() since the SNI-based resolver is set below
+            let mut tls_settings = TlsSettings::intermediate("", "")?;
+            tls_settings.set_cert_resolver(selector.clone());
             tls_settings.enable_h2();
             service.add_tls_with_settings(host.as_str(), None, tls_settings);
         } else {
