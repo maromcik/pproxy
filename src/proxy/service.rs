@@ -414,8 +414,9 @@ impl PingoraService {
         &self,
         upstream_selector: &UpstreamSelector,
         metadata: &RequestMetadata,
+        is_upgrade: bool,
     ) -> pingora::Result<Box<HttpPeer>> {
-        let peer = match upstream_selector {
+        let mut peer = match upstream_selector {
             UpstreamSelector::Direct(upstream) => {
                 let mut peer = Box::new(HttpPeer::new(
                     &upstream.addr,
@@ -448,10 +449,14 @@ impl PingoraService {
                     String::default(),
                 ));
                 utils::set_upstream_options(&mut peer, upstream_config);
-                peer.options.alpn = pingora::protocols::ALPN::H2;
                 peer
             }
         };
+        if is_upgrade {
+            peer.options.alpn = pingora::protocols::ALPN::H1;
+        } else {
+            peer.options.alpn = pingora::protocols::ALPN::H2;
+        }
         info!("REQ:PROXY: {} -> PROXY TO -> {}", metadata, peer._address);
         Ok(peer)
     }
@@ -467,7 +472,7 @@ impl ProxyHttp for PingoraService {
 
     async fn upstream_peer(
         &self,
-        _session: &mut Session,
+        session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> pingora::Result<Box<HttpPeer>> {
         let Some(metadata) = ctx.metadata.as_ref() else {
@@ -483,14 +488,19 @@ impl ProxyHttp for PingoraService {
                 "Server name not supported by pproxy",
             ));
         };
+        let is_upgrade = session.is_upgrade_req();
         for method in &server.proxy_methods.methods {
             match method {
                 ProxyMethod::Exact(upstream_selector) => {
-                    return self.select_upstream(upstream_selector, metadata);
+                    return self.select_upstream(upstream_selector, metadata, is_upgrade);
                 }
                 ProxyMethod::Regex(path_upstream_selector) => {
                     if path_upstream_selector.path.is_match(&metadata.uri) {
-                        return self.select_upstream(&path_upstream_selector.upstream, metadata);
+                        return self.select_upstream(
+                            &path_upstream_selector.upstream,
+                            metadata,
+                            is_upgrade,
+                        );
                     }
                 }
             }
@@ -620,10 +630,6 @@ impl ProxyHttp for PingoraService {
     where
         Self::CTX: Send + Sync,
     {
-        if let Some(upgrade) = session.get_header("Upgrade") {
-            upstream_request.insert_header("Upgrade", upgrade)?;
-        }
-
         let Some(metadata) = ctx.metadata.as_ref() else {
             return Ok(());
         };
