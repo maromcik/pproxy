@@ -44,10 +44,12 @@ fn init_pingora(
         pid_file: "/tmp/pingora.pid".to_string(),
         upgrade_sock: "/tmp/pingora_upgrade.sock".to_string(),
         user: None,
+        working_directory: None,
         group: None,
         threads: num_cpus::get(),
         listener_tasks_per_fd: 1,
         work_stealing: true,
+        runtime_enable_alt_timer: false,
         upstream_keepalive_pool_size: 2000,
         upstream_connect_offload_threadpools: None,
         upstream_connect_offload_thread_per_pool: None,
@@ -55,6 +57,20 @@ fn init_pingora(
         graceful_shutdown_timeout_seconds: None,
         max_retries: 16,
         upgrade_sock_connect_accept_max_retries: None,
+        max_blocking_threads: None,
+        blocking_threads_ttl_seconds: None,
+        fast_timeout_to_tokio_threshold_seconds: Some(
+            pingora_timeout::fast_timeout::DEFAULT_FAST_TIMEOUT_TO_TOKIO_THRESHOLD.as_secs(),
+        ),
+        runtime_metrics_poll_time_histogram: false,
+        runtime_metrics_poll_time_histogram_scale: None,
+        runtime_metrics_poll_time_histogram_resolution_micros: None,
+        runtime_metrics_poll_time_histogram_buckets: None,
+        daemon_ready_timeout_seconds: None,
+        daemon_wait_for_ready: false,
+        daemon_notify_timeout_seconds: None,
+        downstream_tls_offload_threadpools: None,
+        downstream_tls_offload_thread_per_pool: None,
     };
 
     let mut server = Server::new_with_opt_and_conf(None, conf);

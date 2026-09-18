@@ -1,10 +1,10 @@
 [package]
 name = "pproxy"
-version = "1.7.1"
+version = "1.9.0"
 edition = "2024"
 
 [dependencies]
-pingora = { version = "0.8.1", features = ["lb", "default", "openssl", "proxy"] }
+pingora = { version = "0.9.0", features = ["lb", "default", "openssl", "proxy", "time"] }
 async-trait = "0.1.89"
 log = "0.4.29"
 tokio = { version = "1.50.0", features = ["full"]}
@@ -29,3 +29,4 @@ tracing-appender = "0.2.4"
 humantime-serde = "1.1.1"
 strfmt = "0.2.5"
 ipnet = { version = "2.12.0", features = ["std", "serde", "json"] }
+pingora-timeout = "0.9.0"
