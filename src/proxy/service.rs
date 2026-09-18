@@ -422,7 +422,7 @@ impl PingoraService {
                 let mut peer = Box::new(HttpPeer::new(
                     &upstream.addr,
                     upstream.config.tls,
-                    String::default(),
+                    utils::sni_for_upstream(&upstream.addr, &metadata.host),
                 ));
                 utils::set_upstream_options(&mut peer, &upstream.config);
                 peer
@@ -447,7 +447,7 @@ impl PingoraService {
                 let mut peer = Box::new(HttpPeer::new(
                     &upstream,
                     upstream_config.tls,
-                    String::default(),
+                    utils::sni_for_upstream(&upstream.addr.to_string(), &metadata.host),
                 ));
                 utils::set_upstream_options(&mut peer, upstream_config);
                 peer

@@ -19,6 +19,20 @@ where
     }
 }
 
+/// Derive the TLS server name for an upstream connection. For DNS names it is
+/// the upstream's own hostname. IP literals are not sent in the SNI extension
+/// (rustls only sends DNS names), and upstream certificates are rarely issued
+/// for IP SANs, so for IP upstreams the original request host is used instead.
+pub(crate) fn sni_for_upstream(addr: &str, request_host: &str) -> String {
+    let host_part = |addr: &str| addr.split(':').next().unwrap_or(addr).to_string();
+    let host = host_part(addr);
+    if host.parse::<IpAddr>().is_ok() {
+        host_part(request_host).to_string()
+    } else {
+        host.to_string()
+    }
+}
+
 pub(crate) fn set_upstream_options(peer: &mut Box<HttpPeer>, upstream_config: &UpstreamConfig) {
     peer.options.tcp_keepalive = Some(TcpKeepalive::from(upstream_config.tcp_keepalive.clone()));
 
