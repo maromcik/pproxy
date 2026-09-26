@@ -209,9 +209,10 @@ impl IpRule {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Hash, Eq, PartialEq)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone, Hash, Eq, PartialEq)]
 pub enum IpSource {
     Forwarded,
+    #[default]
     Direct,
 }
 
