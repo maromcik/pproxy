@@ -27,38 +27,41 @@ pub(crate) fn sni_for_upstream(addr: &str, request_host: &str) -> String {
     let host_part = |addr: &str| addr.split(':').next().unwrap_or(addr).to_string();
     let host = host_part(addr);
     if host.parse::<IpAddr>().is_ok() {
-        host_part(request_host).to_string()
+        host_part(request_host)
     } else {
-        host.to_string()
+        host
     }
 }
 
 pub(crate) fn set_upstream_options(peer: &mut Box<HttpPeer>, upstream_config: &UpstreamConfig) {
     peer.options.tcp_keepalive = Some(TcpKeepalive::from(upstream_config.tcp_keepalive.clone()));
 
+    apply_opt(upstream_config.verify_cert, |v| {
+        peer.options.verify_cert = v;
+    });
     apply_opt(upstream_config.connection_timeout, |v| {
-        peer.options.connection_timeout = Some(v)
+        peer.options.connection_timeout = Some(v);
     });
     apply_opt(upstream_config.read_timeout, |v| {
-        peer.options.read_timeout = Some(v)
+        peer.options.read_timeout = Some(v);
     });
     apply_opt(upstream_config.write_timeout, |v| {
-        peer.options.write_timeout = Some(v)
+        peer.options.write_timeout = Some(v);
     });
     apply_opt(upstream_config.idle_timeout, |v| {
-        peer.options.idle_timeout = Some(v)
+        peer.options.idle_timeout = Some(v);
     });
     apply_opt(upstream_config.total_connection_timeout, |v| {
-        peer.options.total_connection_timeout = Some(v)
+        peer.options.total_connection_timeout = Some(v);
     });
     apply_opt(upstream_config.tcp_recv_buf, |v| {
-        peer.options.tcp_recv_buf = Some(v)
+        peer.options.tcp_recv_buf = Some(v);
     });
     apply_opt(upstream_config.max_h2_streams, |v| {
-        peer.options.max_h2_streams = v
+        peer.options.max_h2_streams = v;
     });
     apply_opt(upstream_config.tcp_fast_open, |v| {
-        peer.options.tcp_fast_open = v
+        peer.options.tcp_fast_open = v;
     });
 }
 

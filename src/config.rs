@@ -105,6 +105,8 @@ pub struct ProxyToConfig {
 pub struct UpstreamConfig {
     #[serde(default)]
     pub tls: bool,
+    #[serde(default = "default_true")]
+    pub verify_cert: Option<bool>,
     #[serde(default, with = "humantime_serde")]
     pub connection_timeout: Option<Duration>,
     #[serde(default, with = "humantime_serde")]
